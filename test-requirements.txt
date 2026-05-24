@@ -1,0 +1,2 @@
+# DO NOT MERGE — temporary pin until OCA/mis-builder wheels are published.
+odoo-addon-mis_builder @ git+https://github.com/OCA/mis-builder.git@refs/pull/752/head#subdirectory=mis_builder
