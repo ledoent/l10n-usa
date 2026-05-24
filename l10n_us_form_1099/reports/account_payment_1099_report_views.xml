@@ -66,7 +66,7 @@
         name="1099 Report"
         action="action_account_payment_report_1099"
         id="menu_action_account_payment_report_1099"
-        parent="account.account_reports_management_menu"
+        parent="account.menu_finance_reports"
         sequence="2"
     />
 </odoo>
