@@ -2,8 +2,6 @@
 # Copyright (C) 2019-2024 Open Source Integrators
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
-from psycopg2.extensions import AsIs
-
 from odoo import fields, models, tools
 
 
@@ -49,19 +47,10 @@ class AccountPayment1099Report(models.Model):
     def init(self):
         tools.drop_view_if_exists(self._cr, self._table)
         self._cr.execute(
-            """
-            CREATE OR REPLACE VIEW %s AS (
-                %s
-                %s
-                %s
-                %s
-            )
-        """,
-            (
-                AsIs(self._table),
-                AsIs(self._select()),
-                AsIs(self._from()),
-                AsIs(self._join()),
-                AsIs(self._where()),
-            ),
+            f"CREATE OR REPLACE VIEW {self._table} AS ("
+            f"{self._select()}"
+            f"{self._from()}"
+            f"{self._join()}"
+            f"{self._where()}"
+            ")"
         )
