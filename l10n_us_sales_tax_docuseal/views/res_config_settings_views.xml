@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="account.res_config_settings_view_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//block[1]" position="before">
+                <block
+                    title="Tax Exemption (DocuSeal)"
+                    name="docuseal_exemption_settings"
+                >
+                    <setting
+                        string="DocuSeal Connection"
+                        help="Connect to a DocuSeal instance to collect signed exemption certificates."
+                    >
+                        <div class="content-group">
+                            <div class="row mt16">
+                                <label
+                                    for="docuseal_url"
+                                    class="col-lg-4 o_light_label"
+                                />
+                                <field name="docuseal_url" />
+                            </div>
+                            <div class="row">
+                                <label
+                                    for="docuseal_api_token"
+                                    class="col-lg-4 o_light_label"
+                                />
+                                <field name="docuseal_api_token" password="True" />
+                            </div>
+                            <div class="row">
+                                <label
+                                    for="docuseal_template_id"
+                                    class="col-lg-4 o_light_label"
+                                />
+                                <field name="docuseal_template_id" />
+                            </div>
+                            <div class="row">
+                                <label
+                                    for="docuseal_webhook_secret"
+                                    class="col-lg-4 o_light_label"
+                                />
+                                <field
+                                    name="docuseal_webhook_secret"
+                                    password="True"
+                                />
+                            </div>
+                            <div class="text-muted mt8">
+                                Point the DocuSeal webhook at
+                                <code>/docuseal/webhook</code> on this Odoo host.
+                            </div>
+                        </div>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+</odoo>
