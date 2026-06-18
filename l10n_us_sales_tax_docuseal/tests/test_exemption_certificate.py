@@ -2,13 +2,14 @@
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 import hashlib
 import hmac
+import time
 from datetime import timedelta
 from unittest import mock
 
 import requests
 
 from odoo import fields
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
 CLIENT_MOD = "odoo.addons.l10n_us_sales_tax_docuseal.models.docuseal_client"
@@ -42,6 +43,24 @@ class TestExemptionCertificate(TransactionCase):
     def test_template_override_on_record(self):
         self.cert.docuseal_template_id = "99"
         self.assertEqual(self.cert._docuseal_template(), "99")
+
+    def test_date_constraint(self):
+        today = fields.Date.context_today(self.cert)
+        with self.assertRaises(ValidationError):
+            self.cert.write(
+                {
+                    "issue_date": today,
+                    "expiration_date": today - timedelta(days=1),
+                }
+            )
+
+    def test_onchange_prefills_signer(self):
+        draft = self.env["l10n.us.tax.exemption.certificate"].new(
+            {"partner_id": self.partner.id}
+        )
+        draft._onchange_partner_id()
+        self.assertEqual(draft.signer_email, "buyer@acme.test")
+        self.assertEqual(draft.signer_name, "Acme Reseller")
 
     def test_submitter_requires_email(self):
         self.partner.email = False
@@ -119,9 +138,13 @@ class TestExemptionCertificate(TransactionCase):
 
     def test_validity_and_expiry_cron(self):
         self.cert._register_signed_document(b"%PDF-1.4", "c.pdf")
-        self.cert.expiration_date = fields.Date.context_today(
-            self.cert
-        ) - timedelta(days=1)
+        today = fields.Date.context_today(self.cert)
+        self.cert.write(
+            {
+                "issue_date": today - timedelta(days=365),
+                "expiration_date": today - timedelta(days=1),
+            }
+        )
         self.assertFalse(self.cert.is_valid)
         self.env[
             "l10n.us.tax.exemption.certificate"
@@ -205,14 +228,41 @@ class TestDocusealClient(TransactionCase):
             with self.assertRaises(UserError):
                 self.client.docuseal_download("https://ds.test/x.pdf")
 
+    def test_download_rejects_foreign_host(self):
+        # SSRF guard: webhook-supplied URLs must match the configured host.
+        with self.assertRaises(UserError):
+            self.client.docuseal_download("https://evil.test/leak.pdf")
+
+    def _sign(self, secret, body, timestamp):
+        digest = hmac.new(
+            secret, ("%d." % timestamp).encode() + body, hashlib.sha256
+        ).hexdigest()
+        return "%d.%s" % (timestamp, digest)
+
     def test_signature_verification(self):
+        client = self.client
         # No secret -> disabled (always True)
         self.params.set_param("l10n_us_sales_tax_docuseal.webhook_secret", "")
-        self.assertTrue(self.client.docuseal_verify_signature(b"body", None))
+        self.assertTrue(client.docuseal_verify_signature(b"body", None))
         self.params.set_param(
             "l10n_us_sales_tax_docuseal.webhook_secret", "s3cr3t"
         )
-        sig = hmac.new(b"s3cr3t", b"body", hashlib.sha256).hexdigest()
-        self.assertTrue(self.client.docuseal_verify_signature(b"body", sig))
-        self.assertFalse(self.client.docuseal_verify_signature(b"body", "bad"))
-        self.assertFalse(self.client.docuseal_verify_signature(b"body", None))
+        now = int(time.time())
+        self.assertTrue(
+            client.docuseal_verify_signature(
+                b"body", self._sign(b"s3cr3t", b"body", now)
+            )
+        )
+        # wrong digest, malformed, empty, non-integer timestamp
+        self.assertFalse(
+            client.docuseal_verify_signature(b"body", "%d.deadbeef" % now)
+        )
+        self.assertFalse(client.docuseal_verify_signature(b"body", "nodot"))
+        self.assertFalse(client.docuseal_verify_signature(b"body", None))
+        self.assertFalse(client.docuseal_verify_signature(b"body", "abc.def"))
+        # stale timestamp outside the tolerance window
+        self.assertFalse(
+            client.docuseal_verify_signature(
+                b"body", self._sign(b"s3cr3t", b"body", now - 100000)
+            )
+        )
