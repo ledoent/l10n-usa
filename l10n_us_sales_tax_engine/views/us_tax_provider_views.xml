@@ -135,7 +135,7 @@
                 <filter
                     name="over_limit"
                     string="Over Monthly Limit"
-                    domain="[('monthly_call_limit','&gt;',0),('calls_this_month','&gt;=','monthly_call_limit')]"
+                    domain="[('limit_status','=','exceeded')]"
                 />
             </search>
         </field>
