@@ -65,18 +65,34 @@ the shared foundations they depend on.
 
 **Why:** every US company with contractors files these; the OCA module is stranded on 17.0 and predates the 1099-NEC split and the 2025–26 rule changes.
 
-**Reuse / migrate:** port `l10n_us_form_1099` (17.0 → 18.0) as the base; extend heavily.
+**Reuse / migrate:** the stranded `l10n_us_form_1099` (17.0) is a thin "flag vendor + MISC boxes" module that predates the NEC split. Use it for reference, but the promotable version is built around a **reportability determination engine** — that engine is the differentiator, not the form output.
 
-**Build / extend:**
-- **Form & box model** covering **1099-NEC** (Box 1, Box 4 backup withholding) and **1099-MISC** (Rents, Royalties, Other, Medical, Gross proceeds to attorney), with room for INT/DIV/K/S. Box mapping at the **expense/payment line**, not just the vendor (one vendor can split boxes).
-- **Payment aggregation by box per payee per calendar year**, cash-basis (payment date).
-- **Card/third-party-network exclusion (critical):** payments by credit/debit card or TPN (PayPal/Stripe) must be **excluded** from NEC/MISC totals — the processor reports them on 1099-K. Tag payment method; net these out automatically.
-- **Payee data:** TIN/EIN/SSN, W-9 on file (status/date), TIN-match status, **24% backup withholding** accrual + **Form 945** reconciliation.
-- **Effective-dated thresholds:** $600 (≤2025) → **$2,000 (2026+, inflation-indexed)** for NEC/MISC; **1099-K reverted to $20,000 AND 200 txns**. Per-payment-year logic; support per-state thresholds (many states stay at $600).
-- **E-file:** target **IRIS** (FIRE retires after TY2026); generate recipient copies (PDF/e-delivery); 1096 for paper; **10-return aggregate e-file mandate**; corrections workflow.
-- **Deadlines** surfaced in UI: NEC Jan 31 (recipient + IRS); others Jan 31 recipient / Feb 28 paper / Mar 31 e-file.
+**The core insight (data quality):** reportability is **not** "is this vendor a company?" It is:
 
-**Proposed split:** `l10n_us_account_1099` (data model + tagging + report) → `l10n_us_account_1099_iris` (e-file) → `l10n_us_account_1099_withholding` (backup withholding/945). Keep generic; no AvaTax dependency.
+> `reportable? = f(W-9 tax classification, payment category per line, payment method, effective-dated threshold)` — with corporate-exception overrides.
+
+**Determination engine — the moat:**
+- **Payee classification from the W-9 (Line 3a), not a boolean.** Capture Individual/Sole-prop · C-corp · S-corp · Partnership · Trust/estate · **LLC with required C/S/P sub-code** · Other. C/S-corp ⇒ exempt; sole-prop / partnership / SMLLC / **LLC-as-P** ⇒ reportable. **The LLC trap:** without the C/S/P sub-code you cannot decide — an "LLC" flag alone is wrong.
+- **Corporate-exemption overrides (reportable even to corps):** legal/attorney fees → NEC Box 1; gross proceeds to attorney → MISC Box 10; medical & health care → MISC Box 6; fish-for-cash → Box 11; federal-agency service payments. So reportability = **entity-type ∩ payment-category**, with these overrides.
+- **Payment category at the expense/payment LINE, not the vendor:** services → NEC Box 1; rent → MISC Box 1; **tangible goods / merchandise / freight / storage → not reportable**. Mixed-invoice rule: incidental materials *included* with the service; separately-stated goods *stripped*; machine+operator *prorated* (rent vs labor). One vendor can split across boxes and have non-reportable goods lines.
+- **Card / third-party-network exclusion:** net out anything paid by credit/debit card or TPN (PayPal/Stripe) — the processor files the 1099-K; double-reporting is the error to avoid. Requires payment-method capture.
+- **Effective-dated thresholds:** $600 (≤2025) → **$2,000 (2026+, inflation-indexed)** for NEC/MISC; 1099-K reverted to **$20,000 AND 200 txns**. Per-payment-year logic; support per-state thresholds (many states stay at $600). Re-verify against final IRS instructions each season.
+- **Payee data quality:** TIN/EIN/SSN, W-9 status/date, TIN-match status, **24% backup withholding** accrual + **Form 945** reconciliation.
+
+**Filing path — own the data, not the pipe.** Direct IRS filing is real but rarely worth owning:
+- **IRIS Taxpayer Portal** — free, **human CSV/manual upload** (100 records/file), needs a lightweight TCC, *no API*. We can generate the IRIS-format CSV for self-upload.
+- **IRIS A2A** — the only true API, but needs **TCC + ATS certification + XML schemas (Pub 5718)** with yearly re-cert. High, ongoing burden.
+- **3rd-party filers (Tax1099, Avalara/Track1099, Sovos)** expose **APIs** for e-file + state filing + TIN matching + W-9 + recipient e-delivery. (Paychex/ADP are payroll-bundled, less open.)
+- **Design transmission as a pluggable adapter:** ship IRIS-Portal CSV first, add a filer API (Tax1099/Avalara), treat direct A2A as high-volume-only. FIRE retires after **TY2026** → target IRIS; assume the **10-return aggregate e-file mandate** applies.
+- Deadlines surfaced in UI: NEC Jan 31 (recipient + IRS); others Jan 31 recipient / Feb 28 paper / Mar 31 e-file.
+
+**Proposed split (all generic, no AvaTax dependency):**
+- `l10n_us_account_1099` — W-9 classification model + line-level category tagging + **determination engine** + per-payee/box aggregation + report + recipient copies.
+- `l10n_us_account_1099_csv` — IRIS Portal CSV export (free self-file).
+- `l10n_us_account_1099_filer` — adapter to a 3rd-party filer API (Tax1099/Avalara). *(Direct `_iris_a2a` only if high volume justifies TCC/ATS.)*
+- `l10n_us_account_1099_withholding` — backup withholding + Form 945.
+
+**Promotability verdict:** strong — *if* we build the determination engine rather than porting the thin 17.0 module. The engine is rules+data (low architecture risk); the only recurring upkeep is refreshing thresholds/box rules per tax year, which is why we stay filer-agnostic and avoid owning A2A re-certification.
 
 ---
 
@@ -175,7 +191,7 @@ the shared foundations they depend on.
 - **AvaTax vs build:** keep Avalara as the rate engine (recommended) or invest in a generic US rate engine?
 - **Tariffs build vs buy:** build `l10n_us_customs_duty` vs. license the commercial `import_fees` add-on?
 - **Contribution target:** upstream these to OCA/l10n-usa, or keep in the `ledoent` fork + `ken/`?
-- **1099 e-file:** integrate IRIS directly, or export to a 3rd-party filer (Tax1099/Track1099)?
+- **1099 filing path:** recommended = ship IRIS Portal CSV (free self-file) + a 3rd-party filer adapter (Tax1099 / Avalara-Track1099); direct IRIS A2A only if volume justifies the TCC + ATS certification burden. Decision needed: which filer to target first.
 
 ---
 
