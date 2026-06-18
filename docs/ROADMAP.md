@@ -92,6 +92,8 @@ the shared foundations they depend on.
 - `l10n_us_account_1099_filer` — adapter to a 3rd-party filer API (Tax1099/Avalara). *(Direct `_iris_a2a` only if high volume justifies TCC/ATS.)*
 - `l10n_us_account_1099_withholding` — backup withholding + Form 945.
 
+**Filing-path architecture & the IRS-certification question:** see the companion proposal [1099 e-filing strategy](./1099-efile-strategy.md) — why OCA should own the *software* (engine + adapters), not a transmitter certification; CSV-vs-filer-API-vs-IRIS-A2A; and a recommended community plan.
+
 **Promotability verdict:** strong — *if* we build the determination engine rather than porting the thin 17.0 module. The engine is rules+data (low architecture risk); the only recurring upkeep is refreshing thresholds/box rules per tax year, which is why we stay filer-agnostic and avoid owning A2A re-certification.
 
 ---
