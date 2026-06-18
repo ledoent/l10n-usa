@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <record id="view_1099_box_list" model="ir.ui.view">
+        <field name="model">l10n.us.1099.box</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="form" />
+                <field name="code" />
+                <field name="name" />
+                <field name="applies_to_corporations" />
+            </list>
+        </field>
+    </record>
+
+    <record id="view_1099_box_form" model="ir.ui.view">
+        <field name="model">l10n.us.1099.box</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="form" />
+                            <field name="code" />
+                            <field name="name" />
+                        </group>
+                        <group>
+                            <field name="applies_to_corporations" />
+                            <field name="active" />
+                        </group>
+                    </group>
+                    <field name="threshold_ids">
+                        <list editable="bottom">
+                            <field name="date_from" />
+                            <field name="amount" />
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_1099_box" model="ir.actions.act_window">
+        <field name="name">1099 Boxes</field>
+        <field name="res_model">l10n.us.1099.box</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

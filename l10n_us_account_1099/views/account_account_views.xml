@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <record id="view_account_form_1099" model="ir.ui.view">
+        <field name="model">account.account</field>
+        <field name="inherit_id" ref="account.view_account_form" />
+        <field name="arch" type="xml">
+            <field name="account_type" position="after">
+                <field name="us_1099_box_id" />
+                <field
+                    name="us_1099_corporate_reportable"
+                    invisible="not us_1099_box_id"
+                />
+            </field>
+        </field>
+    </record>
+</odoo>

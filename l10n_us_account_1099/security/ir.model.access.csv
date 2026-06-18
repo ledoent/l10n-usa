@@ -1,0 +1,8 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_1099_box_user,1099 box user,model_l10n_us_1099_box,account.group_account_invoice,1,0,0,0
+access_1099_box_manager,1099 box manager,model_l10n_us_1099_box,account.group_account_manager,1,1,1,1
+access_1099_threshold_user,1099 threshold user,model_l10n_us_1099_threshold,account.group_account_invoice,1,0,0,0
+access_1099_threshold_manager,1099 threshold manager,model_l10n_us_1099_threshold,account.group_account_manager,1,1,1,1
+access_1099_line_user,1099 line user,model_l10n_us_1099_line,account.group_account_invoice,1,1,1,1
+access_1099_generate,1099 generate wizard,model_l10n_us_1099_generate,account.group_account_invoice,1,1,1,1
+access_1099_export,1099 export wizard,model_l10n_us_1099_export,account.group_account_invoice,1,1,1,1
