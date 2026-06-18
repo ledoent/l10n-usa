@@ -38,8 +38,8 @@ def resolve_shipping_address(record):
         "state": state_code,
         "city": (partner.city or "").strip().upper(),
         "county": "",  # Not stored on partner by default
-        "address": f'{partner.street or ""}, {partner.city or ""}, '
-        f'{state_code} {zip_code}',
+        "address": f"{partner.street or ''}, {partner.city or ''}, "
+        f"{state_code} {zip_code}",
         "country_code": country_code,
         "partner_id": partner.id,
     }

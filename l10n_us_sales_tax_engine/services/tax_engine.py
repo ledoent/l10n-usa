@@ -5,7 +5,9 @@ from datetime import date as date_type
 
 from odoo import api, models
 
-from .address_resolver import is_us_address, resolve_shipping_address
+from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS
+from ..tools import ORIGIN_BASED_STATES
+from .address_resolver import is_us_address, normalize_zip, resolve_shipping_address
 from .cache_manager import CacheManager
 from .provider_base import ProviderError
 
@@ -44,6 +46,7 @@ class UsTaxEngineService(models.AbstractModel):
             doc_date=doc_date,
             company_id=order.company_id.id,
             currency_id=order.currency_id.id,
+            partner_id=order.partner_id.commercial_partner_id.id,
             apply_fn=lambda result: self._apply_to_sale_order(order, result),
         )
 
@@ -60,8 +63,54 @@ class UsTaxEngineService(models.AbstractModel):
             doc_date=doc_date,
             company_id=move.company_id.id,
             currency_id=move.currency_id.id,
+            partner_id=move.partner_id.commercial_partner_id.id,
             apply_fn=lambda result: self._apply_to_invoice(move, result),
         )
+
+    @api.model
+    def _get_customer_exemption(self, partner_id, state, doc_date, company_id=False):
+        """Hook: return an exemption reason code if the customer is exempt.
+
+        No-op in the engine (returns a falsy value). The
+        ``l10n_us_sales_tax_exemption`` addon overrides this to look up a valid
+        exemption certificate for ``partner_id`` (in ``company_id``) covering
+        ``state`` on ``doc_date`` and return its reason code.
+        """
+        return False
+
+    @api.model
+    def _sourcing_zip(self, company_id, zip_code, state_code):
+        """ZIP to rate from: the seller's ship-from for an intrastate sale in an
+        origin-based state, else the customer's ship-to ZIP.
+
+        Interstate sales, destination-based states, and a non-US/blank seller
+        address all keep the destination ZIP. A misconfigured origin-based seller
+        (no ship-from ZIP) logs a warning and falls back to destination.
+        """
+        if state_code not in ORIGIN_BASED_STATES:
+            return zip_code
+        partner = self.env["res.company"].browse(company_id).partner_id
+        if partner.country_id.code != "US" or partner.state_id.code != state_code:
+            return zip_code  # interstate (or non-US seller) → destination
+        origin_zip = normalize_zip(partner.zip or "")
+        if not origin_zip:
+            _logger.warning(
+                "US Tax: %s is origin-based but the seller has no ship-from ZIP; "
+                "rating at the destination ZIP.",
+                state_code,
+            )
+            return zip_code
+        return origin_zip
+
+    @api.model
+    def _get_marketplace_collection(self, res_model, res_id):
+        """Hook: return a truthy marketplace marker if a facilitator collects.
+
+        No-op in the engine. ``l10n_us_sales_tax_marketplace`` overrides this to
+        return the marketplace when the document is flagged as collected and
+        remitted by a marketplace facilitator (so the seller must not collect).
+        """
+        return False
 
     # ── Core calculation flow ─────────────────────────────────────────────────
 
@@ -76,12 +125,39 @@ class UsTaxEngineService(models.AbstractModel):
         company_id,
         currency_id,
         apply_fn,
+        partner_id=False,
     ):
         """Orchestrate the full calculation flow."""
         ICP = self.env["ir.config_parameter"].sudo()
 
         if ICP.get_param("l10n_us_tax.engine_active", "False") != "True":
             return {"source": "disabled"}
+
+        # Step 0: Marketplace-facilitator collection. If a marketplace collects
+        # and remits for this document, we must NOT collect — regardless of nexus,
+        # exemption, or even a resolvable ship-to address. No-op hook in core
+        # (l10n_us_sales_tax_marketplace implements it).
+        marketplace = self._get_marketplace_collection(res_model, res_id)
+        if marketplace:
+            result = {
+                "source": "marketplace",
+                "tax_amount": 0.0,
+                "marketplace": marketplace,
+            }
+            try:
+                apply_fn(result)
+            except Exception as exc:
+                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            self._log(
+                res_model,
+                res_id,
+                address or {},
+                "marketplace",
+                taxable_amount=0,
+                tax_amount=0,
+                partner_id=partner_id,
+            )
+            return result
 
         # Step 1: Validate address is US
         if not address or not is_us_address(address):
@@ -105,6 +181,13 @@ class UsTaxEngineService(models.AbstractModel):
             company_id, state.id if state else False
         )
         if not has_nexus:
+            result = {"source": "exempt_nexus", "tax_amount": 0.0}
+            # Clear any pre-existing/default taxes — with the engine active and no
+            # nexus in the ship-to state, no US sales tax is due.
+            try:
+                apply_fn(result)
+            except Exception as exc:
+                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
             self._log(
                 res_model,
                 res_id,
@@ -114,12 +197,48 @@ class UsTaxEngineService(models.AbstractModel):
                 tax_amount=0,
                 state_id=state.id if state else False,
                 nexus_applied=False,
+                partner_id=partner_id,
             )
-            return {"source": "exempt_nexus", "tax_amount": 0.0}
+            return result
+
+        # Step 3b: Customer/entity exemption (resale, agriculture, government, …).
+        # The hook is a no-op in the engine; l10n_us_sales_tax_exemption overrides
+        # it to look up a valid certificate for this customer + state + date.
+        exemption_reason = self._get_customer_exemption(
+            partner_id, state, doc_date, company_id
+        )
+        if exemption_reason:
+            result = {
+                "source": "exempt_customer",
+                "tax_amount": 0.0,
+                "exemption_reason": exemption_reason,
+            }
+            try:
+                apply_fn(result)
+            except Exception as exc:
+                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            self._log(
+                res_model,
+                res_id,
+                address,
+                "exempt_customer",
+                taxable_amount=0,
+                tax_amount=0,
+                state_id=state.id if state else False,
+                nexus_applied=True,
+                partner_id=partner_id,
+                exemption_reason=exemption_reason,
+            )
+            return result
 
         # Step 4: Initialize cache manager
         ttl = int(ICP.get_param("l10n_us_tax.cache_ttl_hours", "720"))
         cache = CacheManager(self.env, ttl_hours=ttl)
+
+        # Step 4b: Sourcing — origin-based states rate an INTRASTATE sale from the
+        # seller's ship-from; everything else keeps the ship-to ZIP. Only the rate
+        # lookup ZIP changes; nexus/exemption stay on the destination.
+        rate_zip = self._sourcing_zip(company_id, zip_code, state_code)
 
         # Step 5: Calculate per document line
         engine_mode = ICP.get_param("l10n_us_tax.engine_mode", "hybrid")
@@ -162,7 +281,7 @@ class UsTaxEngineService(models.AbstractModel):
 
             # Calculate rate for this line
             rate_result = self._get_rate(
-                zip_code=zip_code,
+                zip_code=rate_zip,
                 state_code=state_code,
                 state_id=state.id if state else False,
                 product_category_code=cat_code,
@@ -340,8 +459,8 @@ class UsTaxEngineService(models.AbstractModel):
         """Apply fail policy when all providers fail."""
         if fail_policy == "block":
             raise ProviderError(
-                f'US Tax: all providers failed for ZIP={address.get("zip")}. '
-                f'Last error: {last_error}'
+                f"US Tax: all providers failed for ZIP={address.get('zip')}. "
+                f"Last error: {last_error}"
             )
         if fail_policy == "last_cache":
             # Try expired cache
@@ -373,6 +492,16 @@ class UsTaxEngineService(models.AbstractModel):
 
     # ── Apply tax to Odoo documents ───────────────────────────────────────────
 
+    # Sources that exempt the entire document → clear taxes on every line.
+    _WHOLE_DOC_EXEMPT_SOURCES = (
+        "exempt_nexus",
+        "exempt_customer",
+        "marketplace",
+        "disabled",
+        "skip_non_us",
+        "skip_no_address",
+    )
+
     @api.model
     def _apply_to_sale_order(self, order, result):
         """Apply calculated US tax to sale order lines.
@@ -387,15 +516,9 @@ class UsTaxEngineService(models.AbstractModel):
             else order.partner_id.state_id.code
         )
 
-        # If entire order is exempt (no nexus), clear all taxes on all lines
-        if order_source in (
-            "exempt_nexus",
-            "disabled",
-            "skip_non_us",
-            "skip_no_address",
-        ):
-            for line in order.order_line:
-                line.write({"tax_id": [(5, 0, 0)]})
+        # If the whole order is exempt (no nexus / customer cert), clear all taxes
+        if order_source in self._WHOLE_DOC_EXEMPT_SOURCES:
+            order.order_line.write({"tax_id": [(5, 0, 0)]})
             return
 
         for line in order.order_line:
@@ -410,13 +533,19 @@ class UsTaxEngineService(models.AbstractModel):
             if rate <= 0:
                 continue
 
-            tax = self._get_or_create_state_tax(state_code, order.company_id, rate)
+            tax = self._get_or_create_jurisdiction_tax(
+                state_code, order.company_id, line_result.get("rate_detail", {})
+            )
             if tax:
                 line.write({"tax_id": [(6, 0, [tax.id])]})
 
     @api.model
     def _apply_to_invoice(self, move, result):
         """Apply calculated US tax to invoice lines — REPLACE existing taxes."""
+        # Whole-invoice exemption (no nexus / customer cert) — clear all taxes.
+        if result.get("source", "") in self._WHOLE_DOC_EXEMPT_SOURCES:
+            move.invoice_line_ids.write({"tax_ids": [(5, 0, 0)]})
+            return
         lines_map = {r["line_id"]: r for r in result.get("lines", [])}
         state_code = (
             move.partner_shipping_id.state_id.code
@@ -438,57 +567,248 @@ class UsTaxEngineService(models.AbstractModel):
             if rate <= 0:
                 continue
 
-            tax = self._get_or_create_state_tax(state_code, move.company_id, rate)
+            tax = self._get_or_create_jurisdiction_tax(
+                state_code, move.company_id, line_result.get("rate_detail", {})
+            )
             if tax:
                 line.write({"tax_ids": [(6, 0, [tax.id])]})
 
-    @api.model
-    def _get_or_create_state_tax(self, state_code, company, rate_pct=0.0):
-        """Get or create an account.tax for this US state with the exact rate.
+    # Per-level scalar components, in a fixed order, from the shared taxonomy.
+    _JURISDICTION_LEVELS = RATE_COMPONENTS
 
-        We use one tax per state+rate combination so rates are traceable.
-        Rate is stored as percentage (e.g., 7.0 for 7%).
+    @api.model
+    def _get_or_create_jurisdiction_tax(self, state_code, company, rate_detail):
+        """Return an account.tax that books US Sales Tax per jurisdiction.
+
+        Instead of one combined-rate tax per state (which erases the breakdown
+        the GL needs for return filing), this builds one child tax per non-zero
+        jurisdiction component — each tagged with its ``us_tax_level``,
+        ``us_tax_state_id`` and (when resolved) ``us_tax_jurisdiction_id`` — and
+        wraps them in a group tax so every posted move carries a tax line per
+        jurisdiction.
+
+        Two shapes of ``rate_detail`` are accepted (see ``_normalize_components``):
+        a per-named-jurisdiction list (SST resolver) or the legacy
+        state/county/city/district scalars (API providers). When only one
+        component applies, that single child is returned directly (no needless
+        group); a provider returning only a total rate yields one ``combined``
+        child so the amount is still captured (flagged for manual allocation).
         """
         if not state_code:
             return False
 
-        amount_pct = round(rate_pct * 100, 4)  # 0.07 → 7.0
-        name = f"US Sales Tax {state_code} {amount_pct:.4g}%"
-
-        # Use sudo() — tax creation requires accounting permissions
-        Tax = self.env["account.tax"].sudo()
-        TaxGroup = self.env["account.tax.group"].sudo()
-
-        tax = Tax.search(
-            [
-                ("name", "=", name),
-                ("type_tax_use", "=", "sale"),
-                ("company_id", "=", company.id),
-            ],
-            limit=1,
+        state = self.env["res.country.state"].search(
+            [("code", "=", state_code), ("country_id.code", "=", "US")], limit=1
         )
 
+        components = self._normalize_components(rate_detail)
+        if not components:
+            return False
+
+        tax_group = self._get_us_tax_group(company)
+        children = self.env["account.tax"]
+        for comp in components:
+            children |= self._get_or_create_component_tax(
+                state_code, state, company, comp, tax_group
+            )
+
+        if len(children) == 1:
+            return children
+
+        total_pct = round(sum(c["pct"] for c in components), 4)
+        return self._get_or_create_group_tax(
+            state_code, company, total_pct, children, tax_group
+        )
+
+    @api.model
+    def _normalize_components(self, rate_detail):
+        """Flatten a rate result into a list of jurisdiction component dicts.
+
+        Each dict is ``{level, label, pct, jurisdiction_id}``. A
+        ``jurisdictions`` key (per-named-jurisdiction, from the SST resolver)
+        takes precedence; otherwise the legacy level scalars are used, falling
+        back to a single ``combined`` component for total-only providers.
+        """
+        jurisdictions = rate_detail.get("jurisdictions")
+        if jurisdictions:
+            comps = []
+            for jur in jurisdictions:
+                pct = round(float(jur.get("rate", 0.0)) * 100, 4)
+                if pct <= 0:
+                    continue
+                level = jur.get("level", "combined")
+                comps.append(
+                    {
+                        "level": level,
+                        "label": jur.get("label") or level.title(),
+                        "pct": pct,
+                        "jurisdiction_id": jur.get("jurisdiction_id", False),
+                    }
+                )
+            return comps
+
+        comps = [
+            {
+                "level": level,
+                "label": label,
+                "pct": round(float(rate_detail.get(key, 0.0)) * 100, 4),
+                "jurisdiction_id": False,
+            }
+            for level, label, key in self._JURISDICTION_LEVELS
+        ]
+        comps = [c for c in comps if c["pct"] > 0]
+        if comps:
+            return comps
+
+        total_pct = round(float(rate_detail.get("total_rate", 0.0)) * 100, 4)
+        if total_pct > 0:
+            return [
+                {
+                    "level": "combined",
+                    "label": LABEL_BY_LEVEL["combined"],
+                    "pct": total_pct,
+                    "jurisdiction_id": False,
+                }
+            ]
+        return []
+
+    @api.model
+    def _get_us_tax_group(self, company):
+        """Get/create the company-scoped 'US Sales Tax' account.tax.group.
+
+        account.tax.group is company-bound in 18.0, so the lookup must be scoped
+        to avoid a child tax referencing another company's group.
+        """
+        TaxGroup = self.env["account.tax.group"].sudo()
+        domain = [("name", "=", "US Sales Tax"), ("company_id", "=", company.id)]
+        tax_group = TaxGroup.search(domain, limit=1)
+        if not tax_group:
+            tax_group = TaxGroup.create(
+                {
+                    "name": "US Sales Tax",
+                    "sequence": 10,
+                    "company_id": company.id,
+                }
+            )
+        return tax_group
+
+    @api.model
+    def _us_tax_country_id(self, company):
+        """account.tax.country_id is required in 18.0; default to the company's
+        fiscal country, then its country, then the US."""
+        return (
+            company.account_fiscal_country_id.id
+            or company.country_id.id
+            or self.env.ref("base.us").id
+        )
+
+    @api.model
+    def _ensure_tax_account(self, tax, company):
+        """Point the tax's repartition tax lines at the payable account.
+
+        account.tax auto-creates repartition lines with no account, so the
+        collected tax would fall back to the base line's (income) account. Book
+        it to the company's sales-tax-payable liability instead (find-or-create),
+        which also heals taxes created before this fix.
+        """
+        lines = (
+            tax.invoice_repartition_line_ids | tax.refund_repartition_line_ids
+        ).filtered(lambda r: r.repartition_type == "tax" and not r.account_id)
+        if lines:
+            account = company.get_us_tax_payable_account()
+            lines.sudo().write({"account_id": account.id})
+
+    @api.model
+    def _get_or_create_component_tax(self, state_code, state, company, comp, tax_group):
+        """Get/create the per-jurisdiction child tax for one rate component.
+
+        ``comp`` is ``{level, label, pct, jurisdiction_id}``. A resolved named
+        jurisdiction is keyed into both the name and the search domain so two
+        distinct jurisdictions sharing a rate (e.g. two special districts) don't
+        collide on one tax record.
+        """
+        Tax = self.env["account.tax"].sudo()
+        level = comp["level"]
+        label = comp["label"]
+        pct = comp["pct"]
+        jurisdiction_id = comp.get("jurisdiction_id") or False
+        state_id = state.id if state else False
+        name = f"US Sales Tax {state_code} {label} {pct:.4g}%"
+        domain = [
+            ("name", "=", name),
+            ("type_tax_use", "=", "sale"),
+            ("amount_type", "=", "percent"),
+            ("company_id", "=", company.id),
+        ]
+        if jurisdiction_id:
+            domain.append(("us_tax_jurisdiction_id", "=", jurisdiction_id))
+        tax = Tax.search(domain, limit=1)
         if not tax:
-            tax_group = TaxGroup.search([("name", "=", "US Sales Tax")], limit=1)
-            if not tax_group:
-                tax_group = TaxGroup.create({"name": "US Sales Tax", "sequence": 10})
             tax = Tax.create(
                 {
                     "name": name,
                     "type_tax_use": "sale",
                     "amount_type": "percent",
-                    "amount": amount_pct,
+                    "amount": pct,
                     "company_id": company.id,
+                    "country_id": self._us_tax_country_id(company),
                     "tax_group_id": tax_group.id,
-                    "description": f"US Sales Tax — {state_code} @ {amount_pct:.4g}%",
+                    "us_tax_level": level,
+                    "us_tax_state_id": state_id,
+                    "us_tax_jurisdiction_id": jurisdiction_id,
+                    "description": f"US Sales Tax — {state_code} {label} @ {pct:.4g}%",
                 }
             )
-            _logger.info('Created tax "%s" at %s%%', name, amount_pct)
-        elif not tax.tax_group_id or tax.tax_group_id.name != "US Sales Tax":
-            tax_group = TaxGroup.search([("name", "=", "US Sales Tax")], limit=1)
-            if tax_group:
-                tax.write({"tax_group_id": tax_group.id})
+            _logger.info('Created jurisdiction tax "%s" at %s%%', name, pct)
+        elif (
+            tax.us_tax_level != level
+            or (state and tax.us_tax_state_id.id != state_id)
+            or (jurisdiction_id and tax.us_tax_jurisdiction_id.id != jurisdiction_id)
+        ):
+            # Heal tags on a tax created before this version booked jurisdictions.
+            tax.write(
+                {
+                    "us_tax_level": level,
+                    "us_tax_state_id": state_id,
+                    "us_tax_jurisdiction_id": jurisdiction_id,
+                }
+            )
+        # Always book collected tax to the payable liability (heals old taxes).
+        self._ensure_tax_account(tax, company)
+        return tax
 
+    @api.model
+    def _get_or_create_group_tax(
+        self, state_code, company, total_pct, children, tax_group
+    ):
+        """Get/create the parent group tax wrapping the jurisdiction children."""
+        Tax = self.env["account.tax"].sudo()
+        name = f"US Sales Tax {state_code} {total_pct:.4g}%"
+        tax = Tax.search(
+            [
+                ("name", "=", name),
+                ("type_tax_use", "=", "sale"),
+                ("amount_type", "=", "group"),
+                ("company_id", "=", company.id),
+            ],
+            limit=1,
+        )
+        if not tax:
+            tax = Tax.create(
+                {
+                    "name": name,
+                    "type_tax_use": "sale",
+                    "amount_type": "group",
+                    "children_tax_ids": [(6, 0, children.ids)],
+                    "company_id": company.id,
+                    "country_id": self._us_tax_country_id(company),
+                    "tax_group_id": tax_group.id,
+                    "description": f"US Sales Tax — {state_code} @ {total_pct:.4g}%",
+                }
+            )
+            _logger.info('Created group tax "%s" at %s%%', name, total_pct)
+        elif set(tax.children_tax_ids.ids) != set(children.ids):
+            tax.write({"children_tax_ids": [(6, 0, children.ids)]})
         return tax
 
     # ── Audit log ─────────────────────────────────────────────────────────────
@@ -509,6 +829,7 @@ class UsTaxEngineService(models.AbstractModel):
         state_rate=0,
         county_rate=0,
         partner_id=None,
+        exemption_reason=None,
     ):
         # Resolve state_id from address if not provided
         if not state_id and address.get("state"):
@@ -535,6 +856,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "county_rate": county_rate,
                 "taxable_amount": taxable_amount,
                 "tax_amount": tax_amount,
+                "exemption_reason": exemption_reason or "",
                 "calculated_by": self.env.user.id,
                 "status": "success" if source not in ("error",) else "error",
             }

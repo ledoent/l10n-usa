@@ -63,6 +63,26 @@ Sales Orders
 #. The engine calculates and applies the correct state + county rate
 #. Tax Source field shows: ``local``, ``api``, ``cache``, ``exempt_nexus``, or ``exempt_rule``
 
+Sourcing (origin vs. destination)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Most states are **destination-based**: the sale is rated at the ship-to
+address. A handful of states are **origin-based** for *intrastate* sales —
+the rate follows the seller's ship-from location instead.
+
+The engine applies origin sourcing automatically: when the buyer and the
+seller are in the same origin-based state (AZ, IL, MS, MO, NM, OH, PA, TN,
+TX, UT, VA), the seller company's address ZIP is rated rather than the
+buyer's. Interstate sales remain destination-based. If an origin-based
+seller has no ship-from ZIP configured, the engine logs a warning and falls
+back to the destination ZIP.
+
+California is deliberately **excluded** from this list: its district tax is a
+hybrid (state/county/city portions are origin-based while the district
+portion is destination-based), which the current single-ZIP lookup cannot
+model exactly. CA is rated at the destination until per-portion sourcing is
+added.
+
 Calculation Logs
 ~~~~~~~~~~~~~~~~
 
