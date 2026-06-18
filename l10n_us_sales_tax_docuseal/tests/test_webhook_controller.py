@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import time
 from unittest import mock
 
 from odoo.tests.common import HttpCase, tagged
@@ -137,7 +138,11 @@ class TestWebhookController(HttpCase):
             },
         }
         body = json.dumps(payload).encode()
-        sig = hmac.new(b"topsecret", body, hashlib.sha256).hexdigest()
+        ts = int(time.time())
+        digest = hmac.new(
+            b"topsecret", ("%d." % ts).encode() + body, hashlib.sha256
+        ).hexdigest()
+        sig = "%d.%s" % (ts, digest)
         with mock.patch(
             "%s.docuseal_download" % CLIENT_CLS, return_value=b"%PDF"
         ):

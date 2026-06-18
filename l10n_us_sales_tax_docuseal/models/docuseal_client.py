@@ -3,6 +3,8 @@
 import hashlib
 import hmac
 import logging
+import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -12,6 +14,8 @@ from odoo.exceptions import UserError
 _logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
+# DocuSeal signs webhooks as "<timestamp>.<hmac>" and rejects stale ones.
+SIGNATURE_TOLERANCE = 5 * 60
 PARAM_URL = "l10n_us_sales_tax_docuseal.url"
 PARAM_TOKEN = "l10n_us_sales_tax_docuseal.api_token"
 PARAM_TEMPLATE = "l10n_us_sales_tax_docuseal.template_id"
@@ -88,7 +92,19 @@ class DocusealClient(models.AbstractModel):
 
     def docuseal_download(self, url):
         """Download a (signed) document. Uses the auth token in case the URL
-        is a proxied/authenticated DocuSeal link."""
+        is a proxied/authenticated DocuSeal link.
+
+        The URL originates from the (potentially attacker-supplied) webhook
+        payload, so it is restricted to the configured DocuSeal host to avoid
+        server-side request forgery.
+        """
+        base = urlparse(self._docuseal_base_url())
+        target = urlparse(url or "")
+        if (target.scheme, target.netloc) != (base.scheme, base.netloc):
+            raise UserError(
+                _("Refusing to download a document from an unexpected host: %s")
+                % (target.netloc or url)
+            )
         try:
             response = requests.get(
                 url,
@@ -102,15 +118,28 @@ class DocusealClient(models.AbstractModel):
         return response.content
 
     def docuseal_verify_signature(self, raw_body, signature):
-        """Verify the X-Docuseal-Signature HMAC-SHA256 header against the
-        configured webhook secret. Returns True when no secret is configured
-        (verification disabled) or when the signature matches."""
+        """Verify the ``X-Docuseal-Signature`` header against the configured
+        webhook secret.
+
+        DocuSeal sends ``"<timestamp>.<hexdigest>"`` where the digest is
+        ``HMAC-SHA256(secret, "<timestamp>.<body>")``. Returns True when no
+        secret is configured (verification disabled) or when the signature is
+        valid and within the freshness tolerance.
+        """
         secret = self._docuseal_param(PARAM_SECRET, required=False)
         if not secret:
             return True
-        if not signature:
+        timestamp, separator, digest = (signature or "").strip().partition(".")
+        if not separator or not digest:
             return False
+        try:
+            timestamp_int = int(timestamp)
+        except (TypeError, ValueError):
+            return False
+        if abs(int(time.time()) - timestamp_int) > SIGNATURE_TOLERANCE:
+            return False
+        signed_payload = ("%s." % timestamp).encode() + (raw_body or b"")
         expected = hmac.new(
-            secret.encode(), raw_body, hashlib.sha256
+            secret.encode(), signed_payload, hashlib.sha256
         ).hexdigest()
-        return hmac.compare_digest(expected, signature.strip())
+        return hmac.compare_digest(expected, digest)
