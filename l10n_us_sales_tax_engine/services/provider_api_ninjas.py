@@ -68,8 +68,12 @@ class ProviderApiNinjas(ProviderBase):
         if not data:
             raise ProviderError(f"API Ninjas: no data for ZIP={zip_code}.")
 
-        result = data[0] if isinstance(data, list) else data
-        return self.normalize_response(result)
+        raw = data[0] if isinstance(data, list) else data
+        result = self.normalize_response(raw)
+        result["jurisdictions"] = self._named_jurisdictions(
+            payload.get("state", ""), result, raw
+        )
+        return result
 
     def normalize_response(self, raw: dict) -> dict:
         def safe_float(val, default=0.0) -> float:

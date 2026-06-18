@@ -23,6 +23,8 @@ class ProviderTaxJar(ProviderBase):
     NAME = "TaxJar"
     SUPPORTS_ADDRESS = True
     SUPPORTS_ZIP = True
+    COUNTY_NAME_KEY = "county"
+    CITY_NAME_KEY = "city"
 
     def _base_url(self):
         return TAXJAR_SANDBOX if self.record.sandbox_mode else TAXJAR_BASE
@@ -65,7 +67,10 @@ class ProviderTaxJar(ProviderBase):
             raise ProviderError(f"TaxJar HTTP error: {exc}") from exc
 
         self.record.increment_call_counter()
-        return self.normalize_response(resp.json().get("rate", {}))
+        raw = resp.json().get("rate", {})
+        result = self.normalize_response(raw)
+        result["jurisdictions"] = self._named_jurisdictions(state, result, raw)
+        return result
 
     def normalize_response(self, raw: dict) -> dict:
         combined = float(raw.get("combined_rate", 0))
