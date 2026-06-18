@@ -34,6 +34,12 @@ class UsTaxRate(models.Model):
         store=True,
         help="Sum of all rate components.",
     )
+    # SST reduced food/drug rate (§308). Default 0 / unused for non-SST sources.
+    food_drug_rate = fields.Float(
+        digits=(5, 4),
+        default=0.0,
+        help="Reduced rate for SST food/drug categories (§308). 0 = not used.",
+    )
     effective_date = fields.Date(required=True, index=True)
     end_date = fields.Date(
         index=True,
