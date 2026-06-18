@@ -22,12 +22,12 @@ class ResPartner(models.Model):
 
     @api.depends("exemption_certificate_ids")
     def _compute_exemption_certificate_count(self):
-        data = self.env["l10n.us.tax.exemption.certificate"].read_group(
+        data = self.env["l10n.us.tax.exemption.certificate"]._read_group(
             [("partner_id", "in", self.ids)],
-            ["partner_id"],
-            ["partner_id"],
+            groupby=["partner_id"],
+            aggregates=["__count"],
         )
-        mapped = {d["partner_id"][0]: d["partner_id_count"] for d in data}
+        mapped = {partner.id: count for partner, count in data}
         for partner in self:
             partner.exemption_certificate_count = mapped.get(partner.id, 0)
 

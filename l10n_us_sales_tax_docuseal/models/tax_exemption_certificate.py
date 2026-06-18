@@ -4,9 +4,9 @@ import base64
 import logging
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
-from .docuseal_client import PARAM_TEMPLATE, PARAM_URL
+from .docuseal_client import PARAM_TEMPLATE
 
 _logger = logging.getLogger(__name__)
 
@@ -115,6 +115,25 @@ class L10nUsTaxExemptionCertificate(models.Model):
                 not cert.expiration_date or cert.expiration_date >= today
             )
 
+    @api.constrains("issue_date", "expiration_date")
+    def _check_dates(self):
+        for cert in self:
+            if (
+                cert.issue_date
+                and cert.expiration_date
+                and cert.expiration_date < cert.issue_date
+            ):
+                raise ValidationError(
+                    _("Expiration date cannot be before the issue date.")
+                )
+
+    @api.onchange("partner_id")
+    def _onchange_partner_id(self):
+        if self.partner_id and not self.signer_email:
+            self.signer_email = self.partner_id.email
+        if self.partner_id and not self.signer_name:
+            self.signer_name = self.partner_id.name
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -182,9 +201,7 @@ class L10nUsTaxExemptionCertificate(models.Model):
                 send_email=True,
             )
             submitter = response[0] if isinstance(response, list) else response
-            base_url = self.env["ir.config_parameter"].sudo().get_param(
-                PARAM_URL
-            )
+            base_url = client._docuseal_base_url()
             slug = submitter.get("slug")
             cert.write(
                 {
@@ -193,8 +210,7 @@ class L10nUsTaxExemptionCertificate(models.Model):
                         submitter.get("submission_id") or ""
                     ),
                     "docuseal_slug": slug,
-                    "docuseal_sign_url": slug
-                    and "%s/s/%s" % (base_url.rstrip("/"), slug),
+                    "docuseal_sign_url": slug and "%s/s/%s" % (base_url, slug),
                     "signer_email": submitter.get("email") or cert.signer_email,
                 }
             )
