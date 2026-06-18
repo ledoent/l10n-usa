@@ -5,3 +5,4 @@ from . import test_tax_engine  # noqa: F401
 from . import test_local_lookup  # noqa: F401
 from . import test_provider_fallback  # noqa: F401
 from . import test_sale_order  # noqa: F401
+from . import test_sourcing  # noqa: F401
