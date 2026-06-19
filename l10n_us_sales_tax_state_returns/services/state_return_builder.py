@@ -33,14 +33,33 @@ def is_supported(state_code):
 
 
 def collection_allowance(record):
-    """Vendor collection allowance / timely-filing discount for the return."""
-    cfg = ALLOWANCE.get(record.state_id.code)
-    if not cfg:
-        return 0.0
-    amount = record.total_tax * cfg["rate"]
-    if cfg["cap"] is not None:
-        amount = min(amount, cfg["cap"])
-    return round(amount, 2)
+    """Vendor collection allowance / timely-filing discount for the return.
+
+    When the remittance module is installed and a ``us.tax.authority`` is
+    configured for the return's state, that record is the source of truth - so
+    the worksheet and the booked remittance bill never disagree. Otherwise fall
+    back to the built-in per-state table above (best-effort; confirm against
+    current state rules).
+    """
+    currency = record.company_id.currency_id
+    authority = None
+    if "us.tax.authority" in record.env:
+        authority = record.env["us.tax.authority"]._get_for(
+            record.company_id, record.state_id
+        )
+    if authority and authority.allowance_rate:
+        amount = authority.collection_allowance(record.total_tax)
+    else:
+        cfg = ALLOWANCE.get(record.state_id.code)
+        if not cfg:
+            return 0.0
+        amount = record.total_tax * cfg["rate"]
+        if cfg["cap"] is not None:
+            amount = min(amount, cfg["cap"])
+        amount = currency.round(amount)
+    # Never exceed the tax collected, and never go negative (guards a
+    # fat-fingered rate or a refund-period total).
+    return min(max(amount, 0.0), max(record.total_tax, 0.0))
 
 
 def build(record):
@@ -68,6 +87,9 @@ def _tax(record, levels):
 
 
 def _rate(line):
+    # Reverse-derived per-line rate for the worksheet's display column; correct
+    # only when taxable_base is the jurisdiction-specific base for the line
+    # (the report builder stores it per level, not the state-wide base).
     return round(line.tax_amount / line.taxable_base, 6) if line.taxable_base else 0.0
 
 

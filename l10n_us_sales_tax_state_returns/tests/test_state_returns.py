@@ -119,3 +119,9 @@ class TestStateReturns(TransactionCase):
         tx.state = "draft"
         with self.assertRaises(UserError):
             tx.action_export_state_return()
+
+    def test_state_only_worksheet_builds(self):
+        ret = self._make_return("TX", 62.50)  # no local lines
+        csv_text = state_return_builder.build(ret).decode("utf-8")
+        self.assertIn("Texas Sales and Use Tax Return (01-114)", csv_text)
+        self.assertIn("Net Tax Due", csv_text)
