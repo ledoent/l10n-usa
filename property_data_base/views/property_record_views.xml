@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="view_property_record_list" model="ir.ui.view">
+        <field name="name">property.record.list</field>
+        <field name="model">property.record</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name" />
+                <field name="partner_id" />
+                <field name="apn" optional="show" />
+                <field name="lot_area_sqft" optional="show" />
+                <field name="owner_name" optional="hide" />
+                <field name="constraint_count" string="Restrictions" optional="show" />
+                <field name="fetched_on" optional="show" />
+                <field name="is_stale" optional="hide" widget="boolean_toggle" />
+            </list>
+        </field>
+    </record>
+
+    <record id="view_property_record_form" model="ir.ui.view">
+        <field name="name">property.record.form</field>
+        <field name="model">property.record</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button
+                        name="action_resolve"
+                        type="object"
+                        string="Fetch / Refresh Data"
+                        class="oe_highlight"
+                    />
+                </header>
+                <sheet>
+                    <widget
+                        name="web_ribbon"
+                        title="Construction Restrictions"
+                        bg_color="text-bg-danger"
+                        invisible="constraint_count == 0"
+                    />
+                    <widget
+                        name="web_ribbon"
+                        title="Stale"
+                        bg_color="text-bg-warning"
+                        invisible="constraint_count != 0 or not is_stale or not fetched_on"
+                    />
+                    <field name="is_stale" invisible="1" />
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1" />
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Address">
+                            <field name="partner_id" />
+                            <field name="formatted_address" />
+                            <field name="street" />
+                            <field name="city" />
+                            <field name="state_id" />
+                            <field name="zip" />
+                            <field name="country_id" />
+                        </group>
+                        <group string="Location">
+                            <field name="latitude" />
+                            <field name="longitude" />
+                            <field name="county_fips" />
+                            <field name="apn" />
+                            <field name="lot_area_sqft" />
+                        </group>
+                    </group>
+                    <field name="constraint_count" invisible="1" />
+                    <notebook>
+                        <page string="Constraints" name="constraints">
+                            <field name="constraint_ids" readonly="1">
+                                <list
+                                    decoration-danger="severity == 'blocking'"
+                                    decoration-warning="severity == 'warning'"
+                                    decoration-muted="not applies"
+                                >
+                                    <field name="applies" widget="boolean" />
+                                    <field name="name" />
+                                    <field name="severity" />
+                                    <field name="details" optional="show" />
+                                    <field name="source_id" optional="hide" />
+                                    <field name="url" widget="url" optional="hide" />
+                                    <field name="code" optional="hide" />
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Attributes" name="attributes">
+                            <group>
+                                <group>
+                                    <field name="year_built" />
+                                    <field name="building_area_sqft" />
+                                    <field name="stories" />
+                                </group>
+                                <group>
+                                    <field name="beds" />
+                                    <field name="baths" />
+                                    <field name="land_use" />
+                                    <field name="zoning" />
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Ownership &amp; Value" name="owner">
+                            <group>
+                                <group>
+                                    <field name="owner_name" />
+                                    <field name="owner_mailing" />
+                                </group>
+                                <group>
+                                    <field name="assessed_value" />
+                                    <field name="market_value" />
+                                    <field name="currency_id" invisible="1" />
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Geometry" name="geometry">
+                            <group>
+                                <field name="geometry_summary" />
+                                <field name="building_footprint" invisible="1" />
+                                <field name="geometry" invisible="1" />
+                            </group>
+                        </page>
+                        <page string="Provenance" name="provenance">
+                            <group>
+                                <field name="source_ids" widget="many2many_tags" />
+                                <field name="fetched_on" />
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter />
+            </form>
+        </field>
+    </record>
+
+    <record id="view_property_record_search" model="ir.ui.view">
+        <field name="name">property.record.search</field>
+        <field name="model">property.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name" />
+                <field name="partner_id" />
+                <field name="apn" />
+                <field name="owner_name" />
+                <group expand="0" string="Group By">
+                    <filter
+                        name="group_partner"
+                        string="Contact"
+                        context="{'group_by': 'partner_id'}"
+                    />
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_property_record" model="ir.actions.act_window">
+        <field name="name">Properties</field>
+        <field name="res_model">property.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

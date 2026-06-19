@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <menuitem
+        id="menu_property_data_root"
+        name="Property Data"
+        web_icon="property_data_base,static/description/icon.png"
+        sequence="95"
+    />
+    <menuitem
+        id="menu_property_record"
+        parent="menu_property_data_root"
+        action="action_property_record"
+        sequence="10"
+    />
+    <menuitem
+        id="menu_property_data_config"
+        parent="menu_property_data_root"
+        name="Configuration"
+        groups="property_data_base.group_property_data_manager"
+        sequence="90"
+    />
+    <menuitem
+        id="menu_property_data_source"
+        parent="menu_property_data_config"
+        action="action_property_data_source"
+        sequence="10"
+    />
+</odoo>
