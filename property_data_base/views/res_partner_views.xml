@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="view_partner_form_property_data" model="ir.ui.view">
+        <field name="name">res.partner.form.property.data</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form" />
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button
+                    class="oe_stat_button"
+                    type="object"
+                    name="action_view_property_records"
+                    icon="fa-map-marker"
+                    invisible="property_record_count == 0"
+                >
+                    <field
+                        name="property_record_count"
+                        widget="statinfo"
+                        string="Properties"
+                    />
+                </button>
+            </div>
+            <xpath expr="//field[@name='category_id']" position="after">
+                <button
+                    name="action_fetch_property_data"
+                    type="object"
+                    string="Fetch Property Data"
+                    class="btn-link"
+                    icon="fa-search"
+                    groups="property_data_base.group_property_data_user"
+                />
+            </xpath>
+        </field>
+    </record>
+</odoo>
