@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo noupdate="1">
+    <record id="box_nec_1" model="l10n.us.1099.box">
+        <field name="form">nec</field>
+        <field name="code">1</field>
+        <field name="name">Nonemployee compensation</field>
+    </record>
+    <record id="box_nec_4" model="l10n.us.1099.box">
+        <field name="form">nec</field>
+        <field name="code">4</field>
+        <field name="name">Federal income tax withheld</field>
+    </record>
+    <record id="box_misc_1" model="l10n.us.1099.box">
+        <field name="form">misc</field>
+        <field name="code">1</field>
+        <field name="name">Rents</field>
+    </record>
+    <record id="box_misc_2" model="l10n.us.1099.box">
+        <field name="form">misc</field>
+        <field name="code">2</field>
+        <field name="name">Royalties</field>
+    </record>
+    <record id="box_misc_3" model="l10n.us.1099.box">
+        <field name="form">misc</field>
+        <field name="code">3</field>
+        <field name="name">Other income</field>
+    </record>
+    <record id="box_misc_6" model="l10n.us.1099.box">
+        <field name="form">misc</field>
+        <field name="code">6</field>
+        <field name="name">Medical and health care payments</field>
+        <field name="applies_to_corporations" eval="True" />
+    </record>
+    <record id="box_misc_10" model="l10n.us.1099.box">
+        <field name="form">misc</field>
+        <field name="code">10</field>
+        <field name="name">Gross proceeds paid to an attorney</field>
+        <field name="applies_to_corporations" eval="True" />
+    </record>
+</odoo>

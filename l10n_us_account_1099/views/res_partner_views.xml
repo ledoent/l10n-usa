@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <record id="view_partner_form_1099" model="ir.ui.view">
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="US 1099 / W-9" name="us_1099">
+                    <group>
+                        <group string="W-9 Classification">
+                            <field name="us_1099_tax_classification" />
+                            <field
+                                name="us_1099_llc_tax_class"
+                                invisible="us_1099_tax_classification != 'llc'"
+                                required="us_1099_tax_classification == 'llc'"
+                            />
+                            <field name="us_1099_is_corporation" />
+                            <field name="us_1099_tin_type" />
+                        </group>
+                        <group string="W-9 / Withholding">
+                            <field name="us_1099_w9_received" />
+                            <field
+                                name="us_1099_w9_date"
+                                invisible="not us_1099_w9_received"
+                            />
+                            <field name="us_1099_tin_match" />
+                            <field name="us_1099_backup_withholding" />
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

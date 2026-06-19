@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
+     Effective-dated thresholds. OBBBA raised the $600 NEC/MISC threshold to
+     $2,000 for payments made on/after 2026-01-01 (inflation-indexed after).
+     Re-verify against the final IRS instructions each filing season. -->
+<odoo noupdate="1">
+    <!-- 1099-NEC Box 1: $600 -> $2,000 (2026) -->
+    <record id="thr_nec_1_2020" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_nec_1" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">600</field>
+    </record>
+    <record id="thr_nec_1_2026" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_nec_1" />
+        <field name="date_from">2026-01-01</field>
+        <field name="amount">2000</field>
+    </record>
+    <!-- NEC Box 4 (backup withholding): report any amount -->
+    <record id="thr_nec_4" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_nec_4" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">0</field>
+    </record>
+    <!-- MISC Box 1 Rents: $600 -> $2,000 (2026) -->
+    <record id="thr_misc_1_2020" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_1" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">600</field>
+    </record>
+    <record id="thr_misc_1_2026" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_1" />
+        <field name="date_from">2026-01-01</field>
+        <field name="amount">2000</field>
+    </record>
+    <!-- MISC Box 2 Royalties: $10 (unchanged) -->
+    <record id="thr_misc_2" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_2" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">10</field>
+    </record>
+    <!-- MISC Box 3 Other income: $600 -> $2,000 (2026) -->
+    <record id="thr_misc_3_2020" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_3" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">600</field>
+    </record>
+    <record id="thr_misc_3_2026" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_3" />
+        <field name="date_from">2026-01-01</field>
+        <field name="amount">2000</field>
+    </record>
+    <!-- MISC Box 6 Medical: $600 -> $2,000 (2026) -->
+    <record id="thr_misc_6_2020" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_6" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">600</field>
+    </record>
+    <record id="thr_misc_6_2026" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_6" />
+        <field name="date_from">2026-01-01</field>
+        <field name="amount">2000</field>
+    </record>
+    <!-- MISC Box 10 Gross proceeds to attorney: $600 -> $2,000 (2026) -->
+    <record id="thr_misc_10_2020" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_10" />
+        <field name="date_from">2020-01-01</field>
+        <field name="amount">600</field>
+    </record>
+    <record id="thr_misc_10_2026" model="l10n.us.1099.threshold">
+        <field name="box_id" ref="box_misc_10" />
+        <field name="date_from">2026-01-01</field>
+        <field name="amount">2000</field>
+    </record>
+</odoo>

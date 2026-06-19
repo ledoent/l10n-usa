@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <menuitem
+        id="menu_1099_root"
+        name="1099"
+        parent="account.menu_finance_reports"
+        sequence="95"
+    />
+    <menuitem
+        id="menu_1099_generate"
+        name="Generate 1099 Report"
+        parent="menu_1099_root"
+        action="action_1099_generate"
+        sequence="10"
+    />
+    <menuitem
+        id="menu_1099_lines"
+        name="1099 Report Lines"
+        parent="menu_1099_root"
+        action="action_1099_line"
+        sequence="20"
+    />
+    <menuitem
+        id="menu_1099_box"
+        name="1099 Boxes"
+        parent="account.menu_finance_configuration"
+        action="action_1099_box"
+        sequence="200"
+    />
+</odoo>
