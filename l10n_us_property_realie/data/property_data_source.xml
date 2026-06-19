@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo noupdate="1">
+    <record id="source_realie" model="property.data.source">
+        <field name="name">Realie</field>
+        <field name="provider">realie</field>
+        <field name="sequence">20</field>
+        <field name="cache_ttl_days">31</field>
+    </record>
+</odoo>

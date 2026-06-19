@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.realie</field>
+        <field name="model">res.config.settings</field>
+        <field
+            name="inherit_id"
+            ref="property_data_base.res_config_settings_view_form"
+        />
+        <field name="arch" type="xml">
+            <block name="property_data_sources" position="inside">
+                <setting
+                    string="Realie"
+                    help="API key for the Realie property data source."
+                >
+                    <field name="property_data_realie_api_key" password="True" />
+                </setting>
+            </block>
+        </field>
+    </record>
+</odoo>
