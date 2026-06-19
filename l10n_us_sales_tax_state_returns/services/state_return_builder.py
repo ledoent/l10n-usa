@@ -1,5 +1,5 @@
 # Copyright 2026 Ledo Enterprises
-# License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+# License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 """Build a state-structured filing worksheet (CSV) for non-SST states.
 
 This produces the return data organized to each state's form - the line items
