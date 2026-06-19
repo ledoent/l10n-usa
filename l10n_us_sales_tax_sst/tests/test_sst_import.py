@@ -154,7 +154,9 @@ class TestSstImport(TransactionCase):
         )
         # No SST boundary for NY → engine local path → its 8.5% combined rate.
         self.assertAlmostEqual(result["total_rate"], 0.085, places=4)
-        self.assertNotIn("jurisdictions", result)
+        # Rooftop resolution names the local jurisdiction even on the SST
+        # fallback, so a per-jurisdiction breakdown comes back.
+        self.assertIn("jurisdictions", result)
         # Fallback is visible, not silent.
         self.assertTrue(result.get("fallback"))
         self.assertTrue(result.get("fallback_reason"))
