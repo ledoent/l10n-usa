@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <record id="view_exemption_certificate_form" model="ir.ui.view">
+        <field name="model">l10n.us.tax.exemption.certificate</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button
+                        name="action_send_for_signature"
+                        type="object"
+                        string="Send for Signature"
+                        class="btn-primary"
+                        invisible="state not in ('draft', 'rejected', 'expired')"
+                    />
+                    <button
+                        name="action_open_sign_url"
+                        type="object"
+                        string="Open Signing Link"
+                        invisible="not docuseal_sign_url or state != 'sent'"
+                    />
+                    <button
+                        name="action_reset_to_draft"
+                        type="object"
+                        string="Reset to Draft"
+                        invisible="state in ('draft', 'signed')"
+                    />
+                    <button
+                        name="action_cancel"
+                        type="object"
+                        string="Cancel"
+                        invisible="state in ('cancelled', 'signed')"
+                    />
+                    <field
+                        name="state"
+                        widget="statusbar"
+                        statusbar_visible="draft,sent,signed"
+                    />
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1" /></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="partner_id" />
+                            <field name="signer_name" />
+                            <field name="signer_email" widget="email" />
+                            <field name="certificate_type" />
+                        </group>
+                        <group>
+                            <field name="state_id" />
+                            <field name="exemption_number" />
+                            <field name="issue_date" />
+                            <field name="expiration_date" />
+                            <field name="is_valid" />
+                            <field name="company_id" groups="base.group_multi_company" />
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Signed Document" name="document">
+                            <group>
+                                <field
+                                    name="signed_document"
+                                    filename="signed_document_filename"
+                                />
+                                <field name="signed_document_filename" invisible="1" />
+                            </group>
+                        </page>
+                        <page string="DocuSeal" name="docuseal">
+                            <group>
+                                <field name="docuseal_template_id" />
+                                <field name="docuseal_submission_id" />
+                                <field name="docuseal_slug" />
+                                <field name="docuseal_sign_url" widget="url" />
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter />
+            </form>
+        </field>
+    </record>
+
+    <record id="view_exemption_certificate_list" model="ir.ui.view">
+        <field name="model">l10n.us.tax.exemption.certificate</field>
+        <field name="arch" type="xml">
+            <list
+                decoration-success="state == 'signed' and is_valid"
+                decoration-muted="state in ('cancelled', 'expired')"
+                decoration-warning="state == 'sent'"
+            >
+                <field name="name" />
+                <field name="partner_id" />
+                <field name="state_id" optional="show" />
+                <field name="certificate_type" />
+                <field name="expiration_date" optional="show" />
+                <field name="is_valid" />
+                <field name="state" widget="badge" />
+            </list>
+        </field>
+    </record>
+
+    <record id="view_exemption_certificate_search" model="ir.ui.view">
+        <field name="model">l10n.us.tax.exemption.certificate</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name" />
+                <field name="partner_id" />
+                <field name="state_id" />
+                <field name="exemption_number" />
+                <filter
+                    name="valid"
+                    string="Valid"
+                    domain="[('is_valid', '=', True)]"
+                />
+                <filter
+                    name="awaiting"
+                    string="Awaiting Signature"
+                    domain="[('state', '=', 'sent')]"
+                />
+                <separator />
+                <filter
+                    name="expiring_90"
+                    string="Expiring in 90 days"
+                    domain="[('expiration_date', '&lt;=', (context_today() + datetime.timedelta(days=90)).strftime('%Y-%m-%d')), ('state', '=', 'signed')]"
+                />
+                <group expand="0" string="Group By">
+                    <filter
+                        name="group_state"
+                        string="Status"
+                        context="{'group_by': 'state'}"
+                    />
+                    <filter
+                        name="group_jurisdiction"
+                        string="Jurisdiction"
+                        context="{'group_by': 'state_id'}"
+                    />
+                    <filter
+                        name="group_type"
+                        string="Type"
+                        context="{'group_by': 'certificate_type'}"
+                    />
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_exemption_certificate" model="ir.actions.act_window">
+        <field name="name">Exemption Certificates</field>
+        <field name="res_model">l10n.us.tax.exemption.certificate</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_exemption_certificate_search" />
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first exemption certificate
+            </p>
+            <p>
+                Track US sales-tax exemption certificates and collect signatures
+                from customers via DocuSeal.
+            </p>
+        </field>
+    </record>
+</odoo>

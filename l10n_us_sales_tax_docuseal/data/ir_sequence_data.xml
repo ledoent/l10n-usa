@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo noupdate="1">
+    <record id="seq_exemption_certificate" model="ir.sequence">
+        <field name="name">US Tax Exemption Certificate</field>
+        <field name="code">l10n.us.tax.exemption.certificate</field>
+        <field name="prefix">EXEMPT/%(year)s/</field>
+        <field name="padding">4</field>
+        <field name="company_id" eval="False" />
+    </record>
+</odoo>

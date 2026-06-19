@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_exemption_cert_user,l10n.us.tax.exemption.certificate user,model_l10n_us_tax_exemption_certificate,account.group_account_invoice,1,1,1,0
+access_exemption_cert_manager,l10n.us.tax.exemption.certificate manager,model_l10n_us_tax_exemption_certificate,account.group_account_manager,1,1,1,1
+access_exemption_cert_readonly,l10n.us.tax.exemption.certificate readonly,model_l10n_us_tax_exemption_certificate,base.group_user,1,0,0,0
