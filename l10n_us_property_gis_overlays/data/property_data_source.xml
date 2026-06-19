@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo noupdate="1">
+    <record id="source_fema_flood" model="property.data.source">
+        <field name="name">FEMA Flood Zone</field>
+        <field name="provider">fema_flood</field>
+        <field name="sequence">30</field>
+        <field name="cache_ttl_days">180</field>
+    </record>
+    <record id="source_nrhp" model="property.data.source">
+        <field name="name">NRHP Historic District</field>
+        <field name="provider">nrhp</field>
+        <field name="sequence">31</field>
+        <field name="cache_ttl_days">180</field>
+    </record>
+</odoo>
