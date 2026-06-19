@@ -89,6 +89,20 @@ class TestSingleLocalUseRate(UsTaxBaseTest):
             self.Nexus.get_single_local_rate(self.env.company.id, self.tx.id)
         )
 
+    def test_intrastate_seller_gets_no_single_local(self):
+        """An in-TX seller is destination-sourced at the real local rate even
+        with the election set - single-local is a remote-seller mechanism."""
+        self.nexus_tx.write(
+            {"single_local_rate_elected": True, "single_local_rate": 0.0175}
+        )
+        self.env.company.partner_id.write(
+            {"country_id": self.us.id, "state_id": self.tx.id, "zip": "77001"}
+        )
+        self.assertFalse(self.svc._is_interstate(self.env.company.id, "TX"))
+        self.assertIsNone(
+            self.svc._single_local_for(self.env.company.id, self.tx, "TX")
+        )
+
     def test_single_local_override_flattens_to_state_plus_single(self):
         base = self._tx_base_rate()  # 6.25 + 2.00 city = 8.25 actual
         out = self.svc._apply_single_local_rate(base, 0.0175, "TX")

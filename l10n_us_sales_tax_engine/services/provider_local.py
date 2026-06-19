@@ -75,7 +75,9 @@ class ProviderLocal(ProviderBase):
             "state": jurisdiction.fips_state or "",
             "county": jurisdiction.fips_county or "",
             "city": jurisdiction.fips_place or "",
-            "district": jurisdiction.fips_place or jurisdiction.fips_county or "",
+            # A special district is its own geography; never borrow the county
+            # FIPS (that would mislabel the district on the return/SER).
+            "district": jurisdiction.fips_place or "",
         }
         jurisdictions = [
             {

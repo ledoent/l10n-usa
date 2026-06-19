@@ -379,7 +379,10 @@ class UsTaxEngineService(models.AbstractModel):
                 fail_policy=fail_policy,
                 rate_override=rate_override,
             )
-            if single_local is not None and rate_result.get("total_rate"):
+            # Gate on the STATE rate, not the local total: an electing remote
+            # seller collects state + flat single-local even when the local
+            # providers miss (the elected rate is flat, not the real local one).
+            if single_local is not None and rate_result.get("state_rate"):
                 rate_result = self._apply_single_local_rate(
                     rate_result, single_local, state_code
                 )
@@ -518,10 +521,15 @@ class UsTaxEngineService(models.AbstractModel):
                     )
                     # Learn the rooftop jurisdiction this authoritative provider
                     # resolved, so future lookups for the same address resolve
-                    # locally and the provider is not called again.
-                    self._learn_address_jurisdiction(
-                        zip_code, state_code, address, rates, provider_rec.code
-                    )
+                    # locally and the provider is not called again. Only when the
+                    # provider is address-capable AND a street was supplied — a
+                    # ZIP-only guess must not be frozen as a verified rooftop.
+                    if getattr(svc, "SUPPORTS_ADDRESS", False) and address.get(
+                        "address"
+                    ):
+                        self._learn_address_jurisdiction(
+                            zip_code, state_code, address, rates, provider_rec.code
+                        )
                 return rates
 
             except ProviderError as exc:
