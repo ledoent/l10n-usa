@@ -79,6 +79,13 @@ class UsTaxEngineService(models.AbstractModel):
         return False
 
     @api.model
+    def _is_interstate(self, company_id, state_code):
+        """True when the seller is remote (out-of-state or non-US) relative to
+        ``state_code`` - i.e. an interstate sale into that state."""
+        partner = self.env["res.company"].browse(company_id).partner_id
+        return partner.country_id.code != "US" or partner.state_id.code != state_code
+
+    @api.model
     def _sourcing_zip(self, company_id, zip_code, state_code):
         """ZIP to rate from: the seller's ship-from for an intrastate sale in an
         origin-based state, else the customer's ship-to ZIP.
@@ -89,9 +96,9 @@ class UsTaxEngineService(models.AbstractModel):
         """
         if state_code not in ORIGIN_BASED_STATES:
             return zip_code
-        partner = self.env["res.company"].browse(company_id).partner_id
-        if partner.country_id.code != "US" or partner.state_id.code != state_code:
+        if self._is_interstate(company_id, state_code):
             return zip_code  # interstate (or non-US seller) → destination
+        partner = self.env["res.company"].browse(company_id).partner_id
         origin_zip = normalize_zip(partner.zip or "")
         if not origin_zip:
             _logger.warning(
@@ -101,6 +108,79 @@ class UsTaxEngineService(models.AbstractModel):
             )
             return zip_code
         return origin_zip
+
+    @api.model
+    def _single_local_for(self, company_id, state, state_code):
+        """Elected single local use rate for a remote (interstate) sale into
+        ``state``, else None."""
+        if not (state and self._is_interstate(company_id, state_code)):
+            return None
+        return self.env["us.tax.nexus"].get_single_local_rate(company_id, state.id)
+
+    @api.model
+    def _apply_single_local_rate(self, rate_result, single_local, state_code):
+        """Collapse the resolved local rate into the elected single local use
+        rate, keeping the state-level rate (and its jurisdiction tag)."""
+        state_rate = rate_result.get("state_rate", 0.0)
+        state_jur = next(
+            (
+                j
+                for j in (rate_result.get("jurisdictions") or [])
+                if j.get("level") == "state"
+            ),
+            {},
+        )
+        return {
+            "state_rate": state_rate,
+            "county_rate": 0.0,
+            "city_rate": 0.0,
+            "district_rate": single_local,
+            "total_rate": round(state_rate + single_local, 6),
+            "source": "single_local",
+            "jurisdictions": [
+                {
+                    "jurisdiction_id": state_jur.get("jurisdiction_id", False),
+                    "fips": state_jur.get("fips", ""),
+                    "level": "state",
+                    "rate": state_rate,
+                    "label": state_jur.get("label") or state_code,
+                },
+                {
+                    "jurisdiction_id": False,
+                    "fips": "",
+                    "level": "district",
+                    "rate": single_local,
+                    "label": f"{state_code} Single Local Use Rate",
+                },
+            ],
+        }
+
+    @api.model
+    def _learn_address_jurisdiction(self, zip_code, state_code, address, rates, source):
+        """Persist the rooftop jurisdiction an external provider resolved for an
+        address, so subsequent lookups resolve locally (see
+        ``us.tax.zip.mapping.learn_jurisdiction``)."""
+        candidates = [
+            j for j in (rates.get("jurisdictions") or []) if j.get("jurisdiction_id")
+        ]
+        if not candidates:
+            return
+        # Most specific place wins: city > county > district > state.
+        priority = {"city": 0, "county": 1, "district": 2, "state": 3}
+        best = min(candidates, key=lambda j: priority.get(j.get("level"), 9))
+        jurisdiction = self.env["us.tax.jurisdiction"].browse(best["jurisdiction_id"])
+        if not jurisdiction.exists():
+            return
+        self.env["us.tax.zip.mapping"].learn_jurisdiction(
+            {
+                "zip": zip_code,
+                "state": state_code,
+                "city": address.get("city", ""),
+                "address": address.get("address", ""),
+            },
+            jurisdiction,
+            source=source,
+        )
 
     @api.model
     def _get_marketplace_collection(self, res_model, res_id):
@@ -240,6 +320,12 @@ class UsTaxEngineService(models.AbstractModel):
         # lookup ZIP changes; nexus/exemption stay on the destination.
         rate_zip = self._sourcing_zip(company_id, zip_code, state_code)
 
+        # Step 4c: Texas-style single local use rate — a remote (interstate)
+        # seller that has elected the state's single local rate collects a flat
+        # state + single-local rate instead of the actual local rate at each
+        # destination. Resolved once per document.
+        single_local = self._single_local_for(company_id, state, state_code)
+
         # Step 5: Calculate per document line
         engine_mode = ICP.get_param("l10n_us_tax.engine_mode", "hybrid")
         fail_policy = ICP.get_param("l10n_us_tax.fail_policy", "warn")
@@ -293,6 +379,10 @@ class UsTaxEngineService(models.AbstractModel):
                 fail_policy=fail_policy,
                 rate_override=rate_override,
             )
+            if single_local is not None and rate_result.get("total_rate"):
+                rate_result = self._apply_single_local_rate(
+                    rate_result, single_local, state_code
+                )
             line_tax = round(line.price_subtotal * rate_result["total_rate"], 4)
             total_tax += line_tax
             results.append(
@@ -425,6 +515,12 @@ class UsTaxEngineService(models.AbstractModel):
                         state_id=state_id,
                         request_payload=payload,
                         response_payload=rates.get("raw_response", {}),
+                    )
+                    # Learn the rooftop jurisdiction this authoritative provider
+                    # resolved, so future lookups for the same address resolve
+                    # locally and the provider is not called again.
+                    self._learn_address_jurisdiction(
+                        zip_code, state_code, address, rates, provider_rec.code
                     )
                 return rates
 
