@@ -61,15 +61,11 @@ class UsTaxReturn(models.Model):
 
     @api.depends("total_tax", "state_id", "company_id")
     def _compute_collection_allowance(self):
+        # The builder is the single source of truth: it prefers a configured
+        # us.tax.authority, falls back to the per-state table, and clamps to the
+        # tax. (Non-stored, so an authority-rate edit reflects on next read.)
         for rec in self:
-            authority = rec.authority_id
-            if authority and authority.allowance_rate:
-                # A configured per-state authority is the source of truth.
-                rec.collection_allowance = authority.collection_allowance(rec.total_tax)
-            else:
-                rec.collection_allowance = state_return_builder.collection_allowance(
-                    rec
-                )
+            rec.collection_allowance = state_return_builder.collection_allowance(rec)
             rec.net_tax_due = rec.total_tax - rec.collection_allowance
 
     @api.depends("total_tax", "date_from", "date_to", "state_id", "move_id")
@@ -84,10 +80,9 @@ class UsTaxReturn(models.Model):
             )
             # Collected = credits less any non-remittance debits (refunds).
             collected = sum(lines.mapped("credit")) - sum(lines.mapped("debit"))
-            rec.tax_collected_gl = collected
-            rec.tie_out_variance = rec.company_id.currency_id.round(
-                rec.total_tax - collected
-            )
+            currency = rec.company_id.currency_id
+            rec.tax_collected_gl = currency.round(collected)
+            rec.tie_out_variance = currency.round(rec.total_tax - collected)
 
     def _collected_tax_domain(self):
         """Posted lines carrying *this state's* sales tax on the shared payable
@@ -106,12 +101,22 @@ class UsTaxReturn(models.Model):
         """Book the DOR remittance bill: clear the payable, credit the
         allowance to income, owe the net to the authority, reconcile."""
         self.ensure_one()
-        if self.state not in ("generated", "filed"):
+        # A still-live (posted) bill means it's already remitted; a cancelled
+        # bill may be re-remitted (clear the stale link below).
+        if self.move_id and self.move_id.state != "cancel":
+            raise UserError(self.env._("This return is already remitted."))
+        if self.state not in ("generated", "filed", "remitted"):
             raise UserError(
                 self.env._("Generate (and file) the return before remitting.")
             )
-        if self.move_id:
-            raise UserError(self.env._("This return is already remitted."))
+        if self.company_id.currency_id.compare_amounts(self.total_tax, 0.0) <= 0:
+            raise UserError(
+                self.env._(
+                    "Nothing to remit: the return total tax is %(amt)s. A "
+                    "refund/credit period must be handled with a credit note.",
+                    amt=self.total_tax,
+                )
+            )
         company = self.company_id
         # Per-state authority wins; the company defaults are the fallback.
         authority = self.authority_id
@@ -185,10 +190,16 @@ class UsTaxReturn(models.Model):
 
     def _reconcile_payable(self, bill):
         """Reconcile the remittance debit on the payable account against the
-        period's collected-tax credits, clearing the accrual."""
+        period's collected-tax credits, clearing the accrual. Only auto-
+        reconcile when the return ties out to the ledger; a non-zero variance is
+        a real discrepancy, so the bill is left for the user to reconcile (the
+        tie_out_variance field flags it) rather than forcing a partial that
+        strands a residual on the tax-payable account."""
         self.ensure_one()
         account = self.company_id.us_tax_payable_account_id
         if not account.reconcile:
+            return
+        if not self.company_id.currency_id.is_zero(self.tie_out_variance):
             return
         bill_lines = bill.line_ids.filtered(lambda line: line.account_id == account)
         credit_lines = self.env["account.move.line"].search(

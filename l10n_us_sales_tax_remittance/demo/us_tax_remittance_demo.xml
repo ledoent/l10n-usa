@@ -7,38 +7,38 @@
         <field name="name">Texas Comptroller of Public Accounts</field>
         <field name="is_company" eval="True" />
         <field name="supplier_rank">1</field>
-        <field name="state_id" ref="base.state_us_43" />
+        <field name="state_id" ref="base.state_us_44" />
         <field name="country_id" ref="base.us" />
     </record>
     <record id="partner_dor_fl" model="res.partner">
         <field name="name">Florida Department of Revenue</field>
         <field name="is_company" eval="True" />
         <field name="supplier_rank">1</field>
-        <field name="state_id" ref="base.state_us_9" />
+        <field name="state_id" ref="base.state_us_10" />
         <field name="country_id" ref="base.us" />
     </record>
     <record id="partner_dor_pa" model="res.partner">
         <field name="name">Pennsylvania Department of Revenue</field>
         <field name="is_company" eval="True" />
         <field name="supplier_rank">1</field>
-        <field name="state_id" ref="base.state_us_38" />
+        <field name="state_id" ref="base.state_us_39" />
         <field name="country_id" ref="base.us" />
     </record>
 
     <!-- Per-state authorities (allowance rates/caps per each state's rule) -->
     <record id="authority_tx" model="us.tax.authority">
-        <field name="state_id" ref="base.state_us_43" />
+        <field name="state_id" ref="base.state_us_44" />
         <field name="partner_id" ref="partner_dor_tx" />
         <field name="allowance_rate">0.005</field>
     </record>
     <record id="authority_fl" model="us.tax.authority">
-        <field name="state_id" ref="base.state_us_9" />
+        <field name="state_id" ref="base.state_us_10" />
         <field name="partner_id" ref="partner_dor_fl" />
         <field name="allowance_rate">0.025</field>
         <field name="allowance_cap">30.0</field>
     </record>
     <record id="authority_pa" model="us.tax.authority">
-        <field name="state_id" ref="base.state_us_38" />
+        <field name="state_id" ref="base.state_us_39" />
         <field name="partner_id" ref="partner_dor_pa" />
         <field name="allowance_rate">0.01</field>
         <field name="allowance_cap">25.0</field>

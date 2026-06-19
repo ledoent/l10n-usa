@@ -1,6 +1,7 @@
 # Copyright 2026 Ledo Enterprises
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 
 class UsTaxAuthority(models.Model):
@@ -59,6 +60,18 @@ class UsTaxAuthority(models.Model):
             "A tax authority is already configured for this state and company.",
         )
     ]
+
+    @api.constrains("allowance_rate")
+    def _check_allowance_rate(self):
+        for rec in self:
+            if not 0.0 <= rec.allowance_rate <= 1.0:
+                raise ValidationError(
+                    self.env._(
+                        "Collection Allowance %% must be between 0 and 1 "
+                        "(e.g. 0.025 for 2.5%%), got %(rate)s.",
+                        rate=rec.allowance_rate,
+                    )
+                )
 
     @api.depends("state_id.code", "partner_id.name")
     def _compute_display_name(self):

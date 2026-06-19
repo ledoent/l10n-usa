@@ -147,3 +147,33 @@ class TestRemittance(AccountTestInvoicingCommon):
         ret = self._return(100.0)
         self.assertEqual(ret.tax_collected_gl, 90.0)
         self.assertEqual(ret.tie_out_variance, 10.0)
+
+    def test_zero_and_negative_tax_blocked(self):
+        for tax in (0.0, -50.0):
+            ret = self._return(tax)
+            with self.assertRaises(UserError):
+                ret.action_create_remittance()
+
+    def test_variance_skips_auto_reconcile(self):
+        """A non-zero tie-out posts the bill but must NOT auto-reconcile (no
+        stranded residual on the tax-payable account)."""
+        self._collect(90.0)
+        ret = self._return(100.0)
+        ret.action_create_remittance()
+        self.assertEqual(ret.state, "remitted")
+        self.assertTrue(ret.move_id)
+        payable_lines = self.env["account.move.line"].search(
+            [("account_id", "=", self.payable.id)]
+        )
+        self.assertFalse(any(payable_lines.mapped("reconciled")))
+
+    def test_re_remit_after_cancelling_bill(self):
+        self._collect(100.0)
+        ret = self._return(100.0)
+        ret.action_create_remittance()
+        first_bill = ret.move_id
+        first_bill.button_cancel()
+        # A cancelled bill may be re-remitted; a fresh bill is booked.
+        ret.action_create_remittance()
+        self.assertNotEqual(ret.move_id, first_bill)
+        self.assertEqual(ret.move_id.state, "posted")

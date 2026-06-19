@@ -1,5 +1,6 @@
 # Copyright 2026 Ledo Enterprises
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
@@ -120,6 +121,20 @@ class TestAuthority(AccountTestInvoicingCommon):
         # Authority rate 2% -> 2.00, not the built-in TX 0.5% (0.50).
         self.assertEqual(ret.collection_allowance, 2.0)
         self.assertEqual(ret.net_tax_due, 98.0)
+
+    def test_allowance_rate_must_be_a_fraction(self):
+        with self.assertRaises(ValidationError):
+            self.auth_tx.allowance_rate = 2.5  # 250% — fat-fingered percent
+
+    def test_authority_journal_override(self):
+        other = self.company_data["default_journal_purchase"].copy(
+            {"name": "TX Remittance", "code": "TXRMT"}
+        )
+        self.auth_tx.journal_id = other
+        self._collect(100.0, self.tx)
+        ret = self._return(self.tx, 100.0)
+        ret.action_create_remittance()
+        self.assertEqual(ret.move_id.journal_id, other)
 
     def test_state_scoped_reconcile_on_shared_account(self):
         """TX and PA tax accrue to ONE account; remitting TX clears only TX."""
