@@ -8,3 +8,5 @@ from . import test_sale_order  # noqa: F401
 from . import test_provider_registry  # noqa: F401
 from . import test_rule_import  # noqa: F401
 from . import test_sourcing  # noqa: F401
+from . import test_single_local  # noqa: F401
+from . import test_address_cache  # noqa: F401
