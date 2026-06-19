@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo noupdate="1">
+    <record id="source_census" model="property.data.source">
+        <field name="name">US Census Geocoder</field>
+        <field name="provider">census</field>
+        <field name="sequence">5</field>
+        <field name="cache_ttl_days">365</field>
+    </record>
+</odoo>
