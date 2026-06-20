@@ -1,0 +1,97 @@
+# Copyright 2026 Binhex - Carlos R. Rodriguez.
+# License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
+from odoo import api, fields, models
+from odoo.exceptions import ValidationError
+
+from ..levels import JURISDICTION_TYPE_SELECTION
+
+
+class UsTaxJurisdiction(models.Model):
+    _name = "us.tax.jurisdiction"
+    _description = "US Tax Jurisdiction"
+    _parent_name = "parent_id"
+    _parent_store = True
+    _rec_name = "complete_name"
+    _order = "state_id, type, name"
+
+    name = fields.Char(required=True, index=True)
+    complete_name = fields.Char(
+        compute="_compute_complete_name",
+        store=True,
+        recursive=True,
+    )
+    type = fields.Selection(
+        JURISDICTION_TYPE_SELECTION,
+        required=True,
+        index=True,
+    )
+    state_id = fields.Many2one(
+        "res.country.state",
+        domain=[("country_id.code", "=", "US")],
+        index=True,
+        required=True,
+    )
+    county = fields.Char(index=True)
+    city = fields.Char(index=True)
+    district_code = fields.Char()
+    # FIPS identity — the key US tax returns (SST SER, state portals) report by.
+    # Stored as Char to preserve leading zeros (county "003", place "11111").
+    fips_state = fields.Char(string="FIPS State", size=2, index=True)
+    fips_county = fields.Char(string="FIPS County", size=3)
+    fips_place = fields.Char(string="FIPS Place", size=5)
+    jurisdiction_type = fields.Char(
+        string="SST Jurisdiction Type",
+        size=2,
+        help="X12 Data Element 1721 code from the SST rate file "
+        "(00=county, 01=city, 45=state, 63=special district, …).",
+    )
+    composite_ser_code = fields.Char(
+        string="Composite SER Code",
+        size=5,
+        help="When a state assigns one composite FIPS code bundling state + all "
+        "local tax, the combined amount is reported under this code on the SER. "
+        "Set manually for the rare composite-code states; not auto-populated "
+        "from the SST files.",
+    )
+    parent_id = fields.Many2one(
+        "us.tax.jurisdiction",
+        string="Parent Jurisdiction",
+        index=True,
+        ondelete="restrict",
+    )
+    parent_path = fields.Char(index=True)
+    child_ids = fields.One2many("us.tax.jurisdiction", "parent_id")
+    rate_ids = fields.One2many("us.tax.rate", "jurisdiction_id")
+    zip_mapping_ids = fields.One2many("us.tax.zip.mapping", "jurisdiction_id")
+    active = fields.Boolean(default=True)
+
+    _sql_constraints = [
+        (
+            "unique_jurisdiction",
+            "UNIQUE(state_id, type, county, city, district_code)",
+            "A jurisdiction with these parameters already exists.",
+        ),
+    ]
+
+    @api.depends("name", "parent_id.complete_name")
+    def _compute_complete_name(self):
+        for rec in self:
+            if rec.parent_id:
+                rec.complete_name = f"{rec.parent_id.complete_name} / {rec.name}"
+            else:
+                rec.complete_name = rec.name
+
+    @api.constrains("type", "parent_id")
+    def _check_parent_type(self):
+        order = {"state": 0, "county": 1, "city": 2, "district": 3}
+        for rec in self:
+            if rec.parent_id:
+                if order.get(rec.parent_id.type, 99) >= order.get(rec.type, 99):
+                    raise ValidationError(
+                        self.env._(
+                            'Parent type "%(parent)s" must be higher in hierarchy'
+                            ' than "%(child)s".',
+                            parent=rec.parent_id.type,
+                            child=rec.type,
+                        )
+                    )
