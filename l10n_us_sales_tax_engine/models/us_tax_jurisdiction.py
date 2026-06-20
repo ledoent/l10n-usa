@@ -3,6 +3,8 @@
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from ..levels import JURISDICTION_TYPE_SELECTION
+
 
 class UsTaxJurisdiction(models.Model):
     _name = "us.tax.jurisdiction"
@@ -19,12 +21,7 @@ class UsTaxJurisdiction(models.Model):
         recursive=True,
     )
     type = fields.Selection(
-        [
-            ("state", "State"),
-            ("county", "County"),
-            ("city", "City"),
-            ("district", "Special District"),
-        ],
+        JURISDICTION_TYPE_SELECTION,
         required=True,
         index=True,
     )
@@ -37,6 +34,25 @@ class UsTaxJurisdiction(models.Model):
     county = fields.Char(index=True)
     city = fields.Char(index=True)
     district_code = fields.Char()
+    # FIPS identity — the key US tax returns (SST SER, state portals) report by.
+    # Stored as Char to preserve leading zeros (county "003", place "11111").
+    fips_state = fields.Char(string="FIPS State", size=2, index=True)
+    fips_county = fields.Char(string="FIPS County", size=3)
+    fips_place = fields.Char(string="FIPS Place", size=5)
+    jurisdiction_type = fields.Char(
+        string="SST Jurisdiction Type",
+        size=2,
+        help="X12 Data Element 1721 code from the SST rate file "
+        "(00=county, 01=city, 45=state, 63=special district, …).",
+    )
+    composite_ser_code = fields.Char(
+        string="Composite SER Code",
+        size=5,
+        help="When a state assigns one composite FIPS code bundling state + all "
+        "local tax, the combined amount is reported under this code on the SER. "
+        "Set manually for the rare composite-code states; not auto-populated "
+        "from the SST files.",
+    )
     parent_id = fields.Many2one(
         "us.tax.jurisdiction",
         string="Parent Jurisdiction",

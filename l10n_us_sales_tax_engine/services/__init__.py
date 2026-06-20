@@ -4,7 +4,6 @@ from . import provider_base  # noqa: F401
 from . import provider_local  # noqa: F401
 from . import provider_ziptax  # noqa: F401
 from . import provider_api_ninjas  # noqa: F401
-from . import provider_taxjar  # noqa: F401
 from . import address_resolver  # noqa: F401
 from . import cache_manager  # noqa: F401
 from . import tax_engine  # noqa: F401

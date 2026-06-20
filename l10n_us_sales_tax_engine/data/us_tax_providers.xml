@@ -45,20 +45,4 @@
             name="description"
         >ZIP-level lookup. Free tier available. Register: https://api-ninjas.com/register</field>
     </record>
-    <!-- TaxJar — paid, Phase 2 -->
-    <record id="provider_taxjar" model="us.tax.provider">
-        <field name="code">taxjar</field>
-        <field name="name">TaxJar</field>
-        <field name="is_paid">True</field>
-        <field name="active">False</field>
-        <field name="priority">30</field>
-        <field name="sandbox_mode">True</field>
-        <field name="timeout">8</field>
-        <field name="supports_zip_level">True</field>
-        <field name="supports_address_level">True</field>
-        <field name="api_key_param">l10n_us_tax.taxjar_token</field>
-        <field
-            name="description"
-        >Address-level lookup. Paid. Register: https://app.taxjar.com/sign_up</field>
-    </record>
 </odoo>

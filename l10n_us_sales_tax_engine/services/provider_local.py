@@ -30,10 +30,18 @@ class ProviderLocal(ProviderBase):
             .get_param("l10n_us_tax.confidence_threshold", "0.7")
         )
 
-        # Step 1: Resolve ZIP → jurisdiction
+        # Step 1: Resolve jurisdiction from the address (a learned rooftop
+        # mapping wins; ZIP is the fallback), so a straddling ZIP resolves
+        # correctly once an authoritative source has taught it.
         ZipMapping = self.env["us.tax.zip.mapping"]
-        jurisdiction = ZipMapping.get_best_jurisdiction(
-            zip_code, state_code=state_code, confidence_min=confidence_min
+        jurisdiction = ZipMapping.resolve_jurisdiction(
+            {
+                "zip": zip_code,
+                "state": state_code,
+                "city": payload.get("city", ""),
+                "address": payload.get("address", ""),
+            },
+            confidence_min=confidence_min,
         )
         if not jurisdiction:
             raise ProviderError(
@@ -59,6 +67,35 @@ class ProviderLocal(ProviderBase):
                 f"date={date}, category={product_category_code}"
             )
 
+        # Propagate the resolved jurisdiction id (and its FIPS) onto every
+        # non-zero rate level so booked taxes carry us_tax_jurisdiction_id and
+        # the return/SER get a named, FIPS-coded jurisdiction breakdown instead
+        # of falling back to level-only. Mirrors the SST resolver's contract.
+        fips_by_level = {
+            "state": jurisdiction.fips_state or "",
+            "county": jurisdiction.fips_county or "",
+            "city": jurisdiction.fips_place or "",
+            # A special district is its own geography; never borrow the county
+            # FIPS (that would mislabel the district on the return/SER).
+            "district": jurisdiction.fips_place or "",
+        }
+        jurisdictions = [
+            {
+                "jurisdiction_id": jurisdiction.id,
+                "fips": fips_by_level[level],
+                "level": level,
+                "rate": value,
+                "label": jurisdiction.complete_name,
+            }
+            for level, value in (
+                ("state", rate.state_rate),
+                ("county", rate.county_rate),
+                ("city", rate.city_rate),
+                ("district", rate.district_rate),
+            )
+            if value
+        ]
+
         return self.normalize_response(
             {
                 "state_rate": rate.state_rate,
@@ -69,11 +106,12 @@ class ProviderLocal(ProviderBase):
                 "source_date": str(rate.effective_date),
                 "source": rate.source,
                 "jurisdiction": jurisdiction.complete_name,
+                "jurisdictions": jurisdictions,
             }
         )
 
     def normalize_response(self, raw: dict) -> dict:
-        return {
+        result = {
             "state_rate": raw.get("state_rate", 0.0),
             "county_rate": raw.get("county_rate", 0.0),
             "city_rate": raw.get("city_rate", 0.0),
@@ -82,3 +120,6 @@ class ProviderLocal(ProviderBase):
             "source_date": raw.get("source_date"),
             "raw_response": raw,
         }
+        if raw.get("jurisdictions"):
+            result["jurisdictions"] = raw["jurisdictions"]
+        return result

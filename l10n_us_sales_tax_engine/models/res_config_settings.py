@@ -47,6 +47,9 @@ class ResConfigSettings(models.TransientModel):
         default=0.7,
         help="Minimum ZIP-to-jurisdiction confidence to use local data (0.0–1.0).",
     )
+    us_tax_payable_account_id = fields.Many2one(
+        related="company_id.us_tax_payable_account_id", readonly=False
+    )
 
     # ── Provider toggles — show credential only when provider is enabled ──────
     us_tax_enable_ziptax = fields.Boolean(

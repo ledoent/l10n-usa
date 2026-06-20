@@ -5,7 +5,7 @@
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="account.res_config_settings_view_form" />
         <field name="arch" type="xml">
-            <xpath expr="//form" position="inside">
+            <xpath expr="//app[@name='account']" position="inside">
                 <block title="US Sales Tax Engine" id="us_tax_engine_block">
                     <setting
                         id="us_tax_engine_active"
@@ -53,6 +53,17 @@
                             string="ZIP Confidence Threshold"
                         />
                         <field name="us_tax_confidence_threshold" />
+                    </setting>
+                    <setting
+                        id="us_tax_payable_account"
+                        invisible="not us_tax_engine_active"
+                        help="Liability account collected sales tax books to (auto-created if empty)."
+                    >
+                        <label
+                            for="us_tax_payable_account_id"
+                            string="Sales Tax Payable Account"
+                        />
+                        <field name="us_tax_payable_account_id" />
                     </setting>
                 </block>
 

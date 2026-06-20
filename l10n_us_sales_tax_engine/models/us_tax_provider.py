@@ -64,11 +64,11 @@ class UsTaxProvider(models.Model):
             ("unlimited", "Unlimited"),
         ],
         compute="_compute_limit_status",
-        store=False,
+        store=True,
     )
     limit_usage_pct = fields.Float(
         compute="_compute_limit_status",
-        store=False,
+        store=True,
         help="Percentage of monthly limit used.",
     )
     limit_alert_sent = fields.Boolean(
@@ -208,22 +208,28 @@ class UsTaxProvider(models.Model):
 
     # ── Provider service lookup ───────────────────────────────────────────────
 
-    def _get_provider_service(self):
-        """Return the Python service class for this provider."""
+    def _provider_service_classes(self):
+        """Return the {code: service class} registry.
+
+        This is the extension point: an addon adds (or swaps) a provider by
+        overriding this method and updating the dict from ``super()`` — no edit
+        to the engine is needed.
+        """
         from ..services import (  # noqa: PLC0415
             provider_api_ninjas,
             provider_local,
-            provider_taxjar,
             provider_ziptax,
         )
 
-        mapping = {
+        return {
             "local": provider_local.ProviderLocal,
             "ziptax": provider_ziptax.ProviderZipTax,
             "api_ninjas": provider_api_ninjas.ProviderApiNinjas,
-            "taxjar": provider_taxjar.ProviderTaxJar,
         }
-        cls = mapping.get(self.code)
+
+    def _get_provider_service(self):
+        """Return the Python service class for this provider's code."""
+        cls = self._provider_service_classes().get(self.code)
         if not cls:
             raise UserError(
                 self.env._('No service class found for provider code "%s".', self.code)

@@ -38,6 +38,13 @@
                             <field name="district_code" />
                             <field name="active" />
                         </group>
+                        <group string="FIPS / SST Identity">
+                            <field name="fips_state" />
+                            <field name="fips_county" />
+                            <field name="fips_place" />
+                            <field name="jurisdiction_type" />
+                            <field name="composite_ser_code" />
+                        </group>
                     </group>
                 </sheet>
             </form>

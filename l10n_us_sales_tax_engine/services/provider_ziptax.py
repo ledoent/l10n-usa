@@ -26,6 +26,8 @@ class ProviderZipTax(ProviderBase):
     NAME = "ZipTax"
     SUPPORTS_ADDRESS = False
     SUPPORTS_ZIP = True
+    COUNTY_NAME_KEY = "geoCounty"
+    CITY_NAME_KEY = "geoCity"
 
     def validate_credentials(self) -> bool:
         try:
@@ -69,10 +71,15 @@ class ProviderZipTax(ProviderBase):
 
         if not raw.get("results"):
             raise ProviderError(
-                f'ZipTax: no results for ZIP={zip_code}. rCode={raw.get("rCode")}'
+                f"ZipTax: no results for ZIP={zip_code}. rCode={raw.get('rCode')}"
             )
 
-        return self.normalize_response(raw["results"][0])
+        result_raw = raw["results"][0]
+        result = self.normalize_response(result_raw)
+        result["jurisdictions"] = self._named_jurisdictions(
+            payload.get("state", ""), result, result_raw
+        )
+        return result
 
     def normalize_response(self, raw: dict) -> dict:
         return {
