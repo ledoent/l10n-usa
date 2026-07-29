@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo noupdate="1">
+    <!-- Manual check — covers every state, and for most of them it is the
+         only option. Lowest priority so a state-specific source wins. -->
+    <record id="verifier_manual" model="us.tax.exemption.verifier">
+        <field name="name">Manual check</field>
+        <field name="code">manual</field>
+        <field name="mode">manual</field>
+        <field name="priority">100</field>
+        <field
+            name="description"
+        >A person checked the certificate with the issuing authority and recorded what they saw. Attach the screenshot or letter as evidence.</field>
+    </record>
+
+    <record id="verifier_us_tx_cpa" model="us.tax.exemption.verifier">
+        <field name="name">Texas Comptroller</field>
+        <field name="code">us_tx_cpa</field>
+        <field name="mode">api</field>
+        <field name="priority">10</field>
+        <field name="state_ids" eval="[(6, 0, [ref('base.state_us_44')])]" />
+        <field name="api_key_param">l10n_us_tax.tx_cpa_api_key</field>
+        <field
+            name="description"
+        >Checks the purchaser's 11-digit taxpayer number against the Comptroller's active sales tax permit holders. Works with no credentials against the state open-data portal; set the API key parameter to use the Comptroller API instead.</field>
+    </record>
+</odoo>
