@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="res_config_settings_view_form_renewal" model="ir.ui.view">
+        <field name="name">res.config.settings.form.us.tax.renewal</field>
+        <field name="model">res.config.settings</field>
+        <field
+            name="inherit_id"
+            ref="l10n_us_sales_tax_engine.res_config_settings_view_us_tax"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//block[@id='us_tax_engine_block']" position="inside">
+                <setting
+                    string="Exemption certificate renewal"
+                    help="How long a signed certificate stays valid, and how far ahead a replacement is requested."
+                >
+                    <div class="content-group">
+                        <div class="row mt16">
+                            <label
+                                for="us_tax_exemption_validity_years"
+                                class="col-lg-6 o_light_label"
+                            />
+                            <field name="us_tax_exemption_validity_years" />
+                        </div>
+                        <div class="row">
+                            <label
+                                for="us_tax_exemption_renewal_lead_days"
+                                class="col-lg-6 o_light_label"
+                            />
+                            <field name="us_tax_exemption_renewal_lead_days" />
+                        </div>
+                        <div class="row">
+                            <label
+                                for="us_tax_exemption_signature_backend"
+                                class="col-lg-6 o_light_label"
+                            />
+                            <field name="us_tax_exemption_signature_backend" />
+                        </div>
+                    </div>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>

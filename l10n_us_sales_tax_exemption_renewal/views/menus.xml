@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <menuitem
+        id="menu_us_tax_exemption_validity"
+        name="Certificate Validity"
+        parent="l10n_us_sales_tax_engine.menu_us_tax_config"
+        action="action_us_tax_exemption_validity"
+        sequence="55"
+        groups="l10n_us_sales_tax_engine.group_us_tax_manager"
+    />
+</odoo>

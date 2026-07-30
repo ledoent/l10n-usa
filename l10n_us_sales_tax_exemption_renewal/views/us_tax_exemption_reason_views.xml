@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_us_tax_exemption_reason_list_renewal" model="ir.ui.view">
+        <field name="name">us.tax.exemption.reason.list.renewal</field>
+        <field name="model">us.tax.exemption.reason</field>
+        <field
+            name="inherit_id"
+            ref="l10n_us_sales_tax_exemption.view_us_tax_exemption_reason_list"
+        />
+        <field name="arch" type="xml">
+            <field name="entity_use_code" position="after">
+                <field name="validity_years" />
+                <field name="never_expires" />
+            </field>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_us_tax_exemption_form_renewal" model="ir.ui.view">
+        <field name="name">us.tax.exemption.form.renewal</field>
+        <field name="model">us.tax.exemption</field>
+        <field
+            name="inherit_id"
+            ref="l10n_us_sales_tax_exemption.view_us_tax_exemption_form"
+        />
+        <field name="arch" type="xml">
+            <field name="expiry_date" position="after">
+                <field name="renewal_due_date" invisible="not expiry_date" />
+                <field
+                    name="renewal_requested_on"
+                    invisible="not renewal_requested_on"
+                />
+            </field>
+        </field>
+    </record>
+</odoo>
