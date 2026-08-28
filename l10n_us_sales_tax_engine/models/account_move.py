@@ -3,6 +3,7 @@
 import logging
 
 from odoo import fields, models
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ class AccountMove(models.Model):
                     "us_tax_calculated_at": fields.Datetime.now(),
                 }
             )
+        except UserError:
+            # A refusal the user is meant to read (e.g. the move is posted) is
+            # not an engine error — re-raise without logging one.
+            raise
         except Exception as exc:
             _logger.error("US Tax calculation error on invoice %s: %s", self.name, exc)
             raise
@@ -52,6 +57,7 @@ class AccountMove(models.Model):
         if ICP.get_param("l10n_us_tax.engine_active", "False") == "True":
             for move in self.filtered(
                 lambda m: m.move_type in ("out_invoice", "out_refund")
+                and m.state == "draft"
             ):
                 try:
                     self.env["us.tax.engine.service"].calculate_for_invoice(move)

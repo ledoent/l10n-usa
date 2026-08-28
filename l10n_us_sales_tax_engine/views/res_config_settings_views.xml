@@ -55,6 +55,30 @@
                         <field name="us_tax_confidence_threshold" />
                     </setting>
                     <setting
+                        id="us_tax_sale_tax_source"
+                        invisible="not us_tax_engine_active"
+                        string="Sale-Tax Source"
+                        help="Replace the chart's default sale tax (which shows on quotations and website carts before the engine runs) with a 0% 'pending calculation' placeholder. Reversible."
+                    >
+                        <field name="us_tax_sale_tax_adopted" invisible="1" />
+                        <button
+                            name="action_us_tax_adopt_sale_tax_source"
+                            type="object"
+                            string="Adopt engine as sale-tax source"
+                            class="btn-link"
+                            icon="oi-arrow-right"
+                            invisible="us_tax_sale_tax_adopted"
+                        />
+                        <button
+                            name="action_us_tax_restore_sale_tax_source"
+                            type="object"
+                            string="Restore previous default sale tax"
+                            class="btn-link"
+                            icon="oi-arrow-left"
+                            invisible="not us_tax_sale_tax_adopted"
+                        />
+                    </setting>
+                    <setting
                         id="us_tax_payable_account"
                         invisible="not us_tax_engine_active"
                         help="Liability account collected sales tax books to (auto-created if empty)."

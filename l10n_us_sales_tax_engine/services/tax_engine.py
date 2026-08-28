@@ -4,6 +4,7 @@ import logging
 from datetime import date as date_type
 
 from odoo import api, models
+from odoo.exceptions import UserError
 from odoo.fields import Command
 
 from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS
@@ -61,7 +62,23 @@ class UsTaxEngineService(models.AbstractModel):
 
     @api.model
     def calculate_for_invoice(self, move):
-        """Calculate and apply US Sales Tax for an account.move record."""
+        """Calculate and apply US Sales Tax for an account.move record.
+
+        Refuses a move that is no longer a draft: applying the result writes
+        ``tax_ids``, which a posted move rejects. Without this the write fails
+        inside ``_process``'s apply guard, is logged, and the caller still
+        stamps ``us_tax_calculated_at`` — so the document claims a
+        recalculation that never landed.
+        """
+        if move.state != "draft":
+            raise UserError(
+                self.env._(
+                    "%(move)s is %(state)s. Reset it to draft to recalculate "
+                    "US Sales Tax — taxes on a posted entry cannot be changed.",
+                    move=move.display_name,
+                    state=move.state,
+                )
+            )
         doc_date = move.invoice_date or date_type.today()
         address = resolve_shipping_address(move)
         return self._process(
@@ -473,7 +490,12 @@ class UsTaxEngineService(models.AbstractModel):
             # Gate on the STATE rate, not the local total: an electing remote
             # seller collects state + flat single-local even when the local
             # providers miss (the elected rate is flat, not the real local one).
-            if single_local is not None and rate_result.get("state_rate"):
+            # In `combined` mode the flat rate replaces state + local outright,
+            # so it does not need a state rate to build on — an Alabama SSUT
+            # seller owes the 8% whether or not local rate data was loaded.
+            if single_local is not None and (
+                rate_result.get("state_rate") or single_local.get("mode") == "combined"
+            ):
                 rate_result = self._apply_single_local_rate(
                     rate_result, single_local, state_code
                 )
@@ -1166,6 +1188,7 @@ class UsTaxEngineService(models.AbstractModel):
                     "amount_type": "percent",
                     "amount": 0.0,
                     "company_id": company.id,
+                    "country_id": self._us_tax_country_id(company),
                     "tax_group_id": tax_group.id,
                     "description": (
                         "US Sales Tax — Exempt (product category or no "
