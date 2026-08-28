@@ -62,3 +62,13 @@ a glance.
 `tax_id`/`tax_ids` at all to flag "missing tax" cases, those lines will stop
 matching once they carry the explicit 0% tax — this is the intended effect
 of this change, not a regression.
+
+## Making the engine the sale-tax source
+
+The chart of accounts ships a default sale tax (15% on the generic chart)
+that shows on quotations and website carts *before* the engine's first
+calculation, then gets replaced. To avoid misquoting customers, use
+**Settings → US Tax Engine → Adopt engine as sale-tax source**: the company
+default and the products carrying it switch to a 0% *US Sales Tax (pending
+calculation)* placeholder. The action is per company and reversible
+(*Restore previous default sale tax*).
