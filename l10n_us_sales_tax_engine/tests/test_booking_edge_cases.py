@@ -1,13 +1,44 @@
 # Copyright 2026 Ledo Enterprises
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
+from ..services.tax_engine import UsTaxEngineService
 from .common import UsTaxBaseTest
+
+
+class TestApplyFailureIsReported(UsTaxBaseTest):
+    """An apply-time failure must surface, not be stamped as a success."""
+
+    def test_apply_error_is_logged_and_the_order_is_not_stamped(self):
+        order = self.sale_order_fl
+        with patch.object(
+            UsTaxEngineService, "_apply_to_sale_order", side_effect=ValueError("boom")
+        ):
+            with self.assertLogs(
+                "odoo.addons.l10n_us_sales_tax_engine.services.tax_engine", "ERROR"
+            ):
+                order.action_calculate_us_tax()
+        self.assertFalse(order.us_tax_calculated_at, "nothing landed, no stamp")
+        log = self.env["us.tax.calculation.log"].search(
+            [("res_model", "=", "sale.order"), ("res_id", "=", order.id)],
+            order="id desc",
+            limit=1,
+        )
+        self.assertEqual(log.status, "error")
+        self.assertIn("could not be applied", log.error_message)
+
+    def test_locked_order_refusal_reaches_the_user(self):
+        order = self.sale_order_fl
+        order.action_confirm()
+        order.action_lock()
+        with self.assertRaises(UserError):
+            order.action_calculate_us_tax()
 
 
 class TestExemptTaxCountry(UsTaxBaseTest):

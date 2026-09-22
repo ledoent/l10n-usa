@@ -317,10 +317,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "tax_amount": 0.0,
                 "marketplace": marketplace,
             }
-            try:
-                apply_fn(result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -329,6 +326,7 @@ class UsTaxEngineService(models.AbstractModel):
                 taxable_amount=0,
                 tax_amount=0,
                 partner_id=partner_id,
+                applied=applied,
             )
             return result
 
@@ -358,10 +356,7 @@ class UsTaxEngineService(models.AbstractModel):
             # Apply even with no tax due — an order may already carry a tax from
             # an earlier calculation; losing nexus afterward must clear/replace
             # it with the explicit exempt tax, not leave it stale.
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -372,6 +367,7 @@ class UsTaxEngineService(models.AbstractModel):
                 state_id=state.id if state else False,
                 nexus_applied=False,
                 partner_id=partner_id,
+                applied=applied,
             )
             return final_result
 
@@ -387,10 +383,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "tax_amount": 0.0,
                 "exemption_reason": exemption_reason,
             }
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -402,11 +395,14 @@ class UsTaxEngineService(models.AbstractModel):
                 nexus_applied=True,
                 partner_id=partner_id,
                 exemption_reason=exemption_reason,
+                applied=applied,
             )
             return final_result
 
         # Step 3.5: Partner-level exemption certificate
         if partner and partner.sudo().us_tax_exempt:
+            final_result = {"source": "exempt_partner", "tax_amount": 0.0, "lines": []}
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -417,12 +413,8 @@ class UsTaxEngineService(models.AbstractModel):
                 state_id=state.id if state else False,
                 nexus_applied=has_nexus,
                 partner_id=partner.id,
+                applied=applied,
             )
-            final_result = {"source": "exempt_partner", "tax_amount": 0.0, "lines": []}
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
             return final_result
 
         # Step 4: Initialize cache manager
@@ -532,10 +524,7 @@ class UsTaxEngineService(models.AbstractModel):
             "tax_amount": total_tax,
             "lines": results,
         }
-        try:
-            apply_fn(final_result)
-        except Exception as exc:
-            _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+        applied = self._apply(apply_fn, final_result, res_model, res_id)
 
         # Step 7: Audit log — document-level best rate plus a per-line snapshot
         # of what was resolved and what was booked, so an old document can be
@@ -567,8 +556,31 @@ class UsTaxEngineService(models.AbstractModel):
             provider_id=used_provider_id,
             rate_mismatch=rate_mismatch,
             line_detail=line_detail,
+            applied=applied,
         )
         return final_result
+
+    @api.model
+    def _apply(self, apply_fn, result, res_model, res_id):
+        """Apply a result to the document; report, never hide, a failure.
+
+        A refusal meant for the user (a locked order, a posted move) is
+        re-raised as is. Any other apply-time error is logged, recorded on
+        the result (``applied=False``, ``apply_error``) and on the audit log
+        as an error, so a caller never stamps a document as recalculated
+        when nothing landed on it.
+        """
+        try:
+            apply_fn(result)
+        except UserError:
+            raise
+        except Exception as exc:
+            _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            result["applied"] = False
+            result["apply_error"] = str(exc)
+            return False
+        result["applied"] = True
+        return True
 
     @api.model
     def _line_snapshot(self, line_result, rate_address):
@@ -1470,6 +1482,7 @@ class UsTaxEngineService(models.AbstractModel):
         exemption_reason=None,
         rate_mismatch=False,
         line_detail=None,
+        applied=True,
     ):
         # Resolve state_id from address if not provided
         if not state_id and address.get("state"):
@@ -1500,6 +1513,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "rate_mismatch": rate_mismatch,
                 "line_detail": line_detail or [],
                 "calculated_by": self.env.user.id,
-                "status": "success" if source not in ("error",) else "error",
+                "status": "success" if applied and source != "error" else "error",
+                "error_message": "" if applied else "Result could not be applied.",
             }
         )

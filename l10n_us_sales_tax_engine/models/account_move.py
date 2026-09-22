@@ -25,12 +25,13 @@ class AccountMove(models.Model):
         engine = self.env["us.tax.engine.service"]
         try:
             result = engine.calculate_for_invoice(self)
-            self.write(
-                {
-                    "us_tax_source": result.get("source", ""),
-                    "us_tax_calculated_at": fields.Datetime.now(),
-                }
-            )
+            if result.get("applied", True):
+                self.write(
+                    {
+                        "us_tax_source": result.get("source", ""),
+                        "us_tax_calculated_at": fields.Datetime.now(),
+                    }
+                )
         except UserError:
             # A refusal the user is meant to read (e.g. the move is posted) is
             # not an engine error — re-raise without logging one.

@@ -3,6 +3,7 @@
 import logging
 
 from odoo import fields, models
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -32,12 +33,17 @@ class SaleOrder(models.Model):
         engine = self.env["us.tax.engine.service"]
         try:
             result = engine.calculate_for_sale_order(self)
-            self.write(
-                {
-                    "us_tax_source": result.get("source", ""),
-                    "us_tax_calculated_at": fields.Datetime.now(),
-                }
-            )
+            if result.get("applied", True):
+                self.write(
+                    {
+                        "us_tax_source": result.get("source", ""),
+                        "us_tax_calculated_at": fields.Datetime.now(),
+                    }
+                )
+        except UserError:
+            # A refusal the user is meant to read (e.g. a locked order) is
+            # not an engine error — re-raise without logging one.
+            raise
         except Exception as exc:
             _logger.error("US Tax calculation error on SO %s: %s", self.name, exc)
             raise
