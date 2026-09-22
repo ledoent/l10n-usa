@@ -10,6 +10,7 @@ from odoo.fields import Command
 from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS
 from ..tools import ORIGIN_BASED_STATES
 from .address_resolver import (
+    _partner_to_address,
     is_us_address,
     normalize_zip,
     resolve_invoice_address,
@@ -112,30 +113,42 @@ class UsTaxEngineService(models.AbstractModel):
         return partner.country_id.code != "US" or partner.state_id.code != state_code
 
     @api.model
-    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
-        """ZIP to rate from: the ship-from for an intrastate sale in an origin-
-        based state, else the customer's ship-to ZIP.
+    def _sourcing_address(self, res_model, res_id, company_id, address):
+        """Address to rate from: the ship-from for an intrastate sale in an
+        origin-based state, else the customer's ship-to address.
+
+        The whole address switches, not just the ZIP: the rate lookup carries
+        the street to the rooftop resolver and to address-capable providers,
+        so sending the origin ZIP with the destination street would let a
+        learned destination rooftop win and silently undo the sourcing.
 
         The ship-from partner is resolved via ``_get_origin_partner`` (the
         company address by default; ``l10n_us_sales_tax_stock`` returns the
         shipping warehouse). Interstate sales, destination-based states, and a
-        non-US or blank origin keep the destination ZIP; an origin with no ZIP
+        non-US or blank origin keep the destination; an origin with no ZIP
         logs a warning and falls back to destination.
         """
+        state_code = address.get("state", "")
         if state_code not in ORIGIN_BASED_STATES:
-            return zip_code
+            return address
         origin = self._get_origin_partner(res_model, res_id, company_id)
         if origin.country_id.code != "US" or origin.state_id.code != state_code:
-            return zip_code  # interstate (or non-US origin) → destination
-        origin_zip = normalize_zip(origin.zip or "")
-        if not origin_zip:
+            return address  # interstate (or non-US origin) → destination
+        if not normalize_zip(origin.zip or ""):
             _logger.warning(
                 "US Tax: %s is origin-based but the ship-from has no ZIP; "
                 "rating at the destination ZIP.",
                 state_code,
             )
-            return zip_code
-        return origin_zip
+            return address
+        return _partner_to_address(origin)
+
+    @api.model
+    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
+        """ZIP to rate from — see ``_sourcing_address``."""
+        return self._sourcing_address(
+            res_model, res_id, company_id, {"zip": zip_code, "state": state_code}
+        )["zip"]
 
     @api.model
     def _get_origin_partner(self, res_model, res_id, company_id):
@@ -415,11 +428,10 @@ class UsTaxEngineService(models.AbstractModel):
         cache = CacheManager(self.env, ttl_hours=ttl)
 
         # Step 4b: Sourcing — origin-based states rate an INTRASTATE sale from the
-        # seller's ship-from; everything else keeps the ship-to ZIP. Only the rate
-        # lookup ZIP changes; nexus/exemption stay on the destination.
-        rate_zip = self._sourcing_zip(
-            res_model, res_id, company_id, zip_code, state_code
-        )
+        # seller's ship-from; everything else keeps the ship-to. Only the rate
+        # lookup address changes; nexus/exemption/log stay on the destination.
+        rate_address = self._sourcing_address(res_model, res_id, company_id, address)
+        rate_zip = rate_address["zip"]
 
         # Step 4c: remote-seller single/simplified local rate — a remote
         # (interstate) seller that has elected (or is subject to) the state's
@@ -481,7 +493,7 @@ class UsTaxEngineService(models.AbstractModel):
                 product_category_code=cat_code,
                 product_category_id=cat_id,
                 doc_date=doc_date,
-                address=address,
+                address=rate_address,
                 cache=cache,
                 engine_mode=engine_mode,
                 fail_policy=fail_policy,
