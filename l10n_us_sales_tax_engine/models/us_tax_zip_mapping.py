@@ -77,8 +77,15 @@ class UsTaxZipMapping(models.Model):
         ]
         if state_code:
             domain += [("state_id.code", "=", state_code)]
-
-        mapping = self.search(domain, order="confidence desc", limit=1)
+        # ZIP-level rows first: a learned rooftop (address_key set) answers for
+        # ITS address and must not outrank the imported ZIP-level guess for the
+        # other addresses in a straddling ZIP. When the ZIP has no ZIP-level
+        # row at all, a rooftop is still the best available guess.
+        mapping = self.search(
+            domain + [("address_key", "in", [False, ""])],
+            order="confidence desc",
+            limit=1,
+        ) or self.search(domain, order="confidence desc", limit=1)
         return mapping.jurisdiction_id if mapping else self.env["us.tax.jurisdiction"]
 
     @api.model
