@@ -8,6 +8,7 @@ from odoo.tests.common import tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
+from ..services.provider_base import ProviderError
 from ..services.tax_engine import UsTaxEngineService
 from .common import UsTaxBaseTest
 
@@ -248,6 +249,31 @@ class TestPostedInvoiceGuard(AccountTestInvoicingCommon):
             stamp,
             "a refused recalculation must not stamp the document",
         )
+
+    def test_block_policy_stops_the_post(self):
+        """With fail_policy 'block' and no rate available, posting must fail
+        rather than post the move with stale or missing tax."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "l10n_us_tax.fail_policy", "block"
+        )
+        nowhere = self.env["res.partner"].create(
+            {
+                "name": "No Rate Customer",
+                "zip": "33999",
+                "state_id": self.fl.id,
+                "country_id": self.us.id,
+            }
+        )
+        invoice = self.init_invoice(
+            "out_invoice",
+            partner=nowhere,
+            invoice_date="2024-06-01",
+            products=self.product_a,
+        )
+        logger = "odoo.addons.l10n_us_sales_tax_engine.services.tax_engine"
+        with self.assertLogs(logger, level="WARNING"), self.assertRaises(ProviderError):
+            invoice.action_post()
+        self.assertEqual(invoice.state, "draft")
 
     def test_posting_still_calculates(self):
         invoice = self.init_invoice(

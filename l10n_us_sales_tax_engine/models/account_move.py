@@ -5,6 +5,8 @@ import logging
 from odoo import fields, models
 from odoo.exceptions import UserError
 
+from ..services.provider_base import ProviderError
+
 _logger = logging.getLogger(__name__)
 
 
@@ -62,6 +64,10 @@ class AccountMove(models.Model):
             ):
                 try:
                     self.env["us.tax.engine.service"].calculate_for_invoice(move)
+                except (UserError, ProviderError):
+                    # A refusal for the user, or the "block" fail policy: the
+                    # move must not post with stale or missing tax.
+                    raise
                 except Exception as exc:
                     _logger.error("US Tax auto-calc on post failed: %s", exc)
         return super()._post(soft=soft)
