@@ -45,6 +45,12 @@ class UsTaxCalculationLog(models.Model):
         ],
         required=True,
     )
+    rate_mismatch = fields.Boolean(
+        help="The document date resolved a rate that is no longer the one in "
+        "force on a jurisdiction tax. Invoices book the historical amount on "
+        "their tax lines; quotations show the current rate until invoiced. "
+        "The per-line detail carries both rates.",
+    )
     exemption_reason = fields.Char(
         help="Reason code of the customer exemption certificate, when the sale "
         "was exempted by one (source = Exempt — Customer Certificate).",
@@ -71,6 +77,12 @@ class UsTaxCalculationLog(models.Model):
     # Audit data
     request_payload = fields.Text()
     response_payload = fields.Text(help="Sanitized — no API keys stored.")
+    line_detail = fields.Text(
+        help="JSON snapshot per document line: the resolved rate components "
+        "(level, label, jurisdiction, rate), each with the tax record it was "
+        "booked to and the amount on that record. Jurisdiction taxes carry "
+        "the rate in force, so this is what reproduces an old document.",
+    )
     calculated_at = fields.Datetime(default=fields.Datetime.now, index=True)
     calculated_by = fields.Many2one(
         "res.users",
@@ -126,5 +138,7 @@ class UsTaxCalculationLog(models.Model):
                     if "key" not in k.lower() and "token" not in k.lower()
                 }
                 payload[key] = json.dumps(sanitized)
+        if isinstance(payload.get("line_detail"), list | dict):
+            payload["line_detail"] = json.dumps(payload["line_detail"], default=str)
         # sudo() so any user can trigger log creation (system record)
         return super(UsTaxCalculationLog, self.sudo()).create(payload)  # pylint: disable=super-method-mismatch

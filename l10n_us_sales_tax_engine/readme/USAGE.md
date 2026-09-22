@@ -52,6 +52,36 @@ never calculated" on an invoice or in a tax report filtered/grouped by
 line was evaluated and a deliberate "no tax due" determination was made —
 the kind of audit trail a sales-tax-exempt line should leave behind.
 
+### One tax record per jurisdiction; rate changes update it in place
+
+Each resolved jurisdiction books to one stable `account.tax`
+(`US Sales Tax FL ALPHA County`), identified by its company, level, state,
+jurisdiction and product-tax-category tags — not by its name or rate. When
+a local or district rate changes, the next calculation updates that
+record's amount; no new record is created per rate version, so the tax
+list stays the size of the jurisdictions actually sold into. A jurisdiction
+that taxes a product category at its own rate (a category-specific **Tax
+Rate** row) books that category to its own record
+(`US Sales Tax FL ALPHA County (FOOD)`).
+
+This is safe because Odoo freezes tax lines on posting: a posted invoice
+keeps the amounts it was posted with whatever the tax record says later.
+The authority on rate history is the effective-dated **Tax Rates** table
+plus the per-line snapshot on each **Calculation Log** entry (resolved
+components and the record each one was booked to, at what amount).
+
+A document dated before a rate change resolves the historical rate, and
+the shared record is never rewound to it — that would re-rate every open
+draft. An **invoice** books the historical amount on its own tax lines
+(Odoo keeps a set tax-line amount through posting), so it pays the rate of
+its date. A **quotation** shows the current rate until it is invoiced. Both
+are logged with **Rate mismatch** ticked and both rates in the line
+snapshot.
+
+Components an external provider returns without a resolved jurisdiction
+(`US Sales Tax TX County 2%`) keep the rate in their identity, because the
+rate is the only thing that distinguishes one county from another.
+
 The *specific* reason for a 0% line (which product category, which state,
 nexus or no nexus) is not encoded in the tax's name — that level of detail
 already lives on `us.tax.calculation.log`, one record per calculation. The
