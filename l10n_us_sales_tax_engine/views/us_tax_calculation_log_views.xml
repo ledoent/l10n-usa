@@ -16,6 +16,7 @@
                     decoration-info="source=='cache'"
                     decoration-warning="source=='error'"
                 />
+                <field name="rate_mismatch" optional="show" />
                 <field name="total_rate" widget="percentage" />
                 <field name="taxable_amount" />
                 <field name="tax_amount" />
@@ -73,6 +74,7 @@
                         >
                             <field name="request_payload" />
                             <field name="response_payload" />
+                            <field name="line_detail" />
                         </page>
                     </notebook>
                 </sheet>
@@ -89,6 +91,11 @@
                 <filter name="local" string="Local" domain="[('source','=','local')]" />
                 <filter name="api" string="API" domain="[('source','=','api')]" />
                 <filter name="cache" string="Cache" domain="[('source','=','cache')]" />
+                <filter
+                    name="rate_mismatch"
+                    string="Rate mismatch"
+                    domain="[('rate_mismatch','=',True)]"
+                />
                 <filter
                     name="errors"
                     string="Errors"

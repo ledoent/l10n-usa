@@ -2,13 +2,17 @@
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 import logging
 from datetime import date as date_type
+from math import copysign
 
-from odoo import api, models
+from odoo import api, fields, models
+from odoo.exceptions import UserError
 from odoo.fields import Command
+from odoo.tools import float_compare
 
-from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS
+from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS, RATE_FIELD_BY_LEVEL
 from ..tools import ORIGIN_BASED_STATES
 from .address_resolver import (
+    _partner_to_address,
     is_us_address,
     normalize_zip,
     resolve_invoice_address,
@@ -42,7 +46,7 @@ class UsTaxEngineService(models.AbstractModel):
     @api.model
     def calculate_for_sale_order(self, order):
         """Calculate and apply US Sales Tax for a sale.order record."""
-        doc_date = order.date_order.date() if order.date_order else date_type.today()
+        doc_date = fields.Date.context_today(order, order.date_order or None)
         if order.us_tax_based_on_shipping:
             address = resolve_shipping_address(order)
         else:
@@ -61,7 +65,23 @@ class UsTaxEngineService(models.AbstractModel):
 
     @api.model
     def calculate_for_invoice(self, move):
-        """Calculate and apply US Sales Tax for an account.move record."""
+        """Calculate and apply US Sales Tax for an account.move record.
+
+        Refuses a move that is no longer a draft: applying the result writes
+        ``tax_ids``, which a posted move rejects. Without this the write fails
+        inside ``_process``'s apply guard, is logged, and the caller still
+        stamps ``us_tax_calculated_at`` — so the document claims a
+        recalculation that never landed.
+        """
+        if move.state != "draft":
+            raise UserError(
+                self.env._(
+                    "%(move)s is %(state)s. Reset it to draft to recalculate "
+                    "US Sales Tax — taxes on a posted entry cannot be changed.",
+                    move=move.display_name,
+                    state=move.state,
+                )
+            )
         doc_date = move.invoice_date or date_type.today()
         address = resolve_shipping_address(move)
         return self._process(
@@ -95,30 +115,42 @@ class UsTaxEngineService(models.AbstractModel):
         return partner.country_id.code != "US" or partner.state_id.code != state_code
 
     @api.model
-    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
-        """ZIP to rate from: the ship-from for an intrastate sale in an origin-
-        based state, else the customer's ship-to ZIP.
+    def _sourcing_address(self, res_model, res_id, company_id, address):
+        """Address to rate from: the ship-from for an intrastate sale in an
+        origin-based state, else the customer's ship-to address.
+
+        The whole address switches, not just the ZIP: the rate lookup carries
+        the street to the rooftop resolver and to address-capable providers,
+        so sending the origin ZIP with the destination street would let a
+        learned destination rooftop win and silently undo the sourcing.
 
         The ship-from partner is resolved via ``_get_origin_partner`` (the
         company address by default; ``l10n_us_sales_tax_stock`` returns the
         shipping warehouse). Interstate sales, destination-based states, and a
-        non-US or blank origin keep the destination ZIP; an origin with no ZIP
+        non-US or blank origin keep the destination; an origin with no ZIP
         logs a warning and falls back to destination.
         """
+        state_code = address.get("state", "")
         if state_code not in ORIGIN_BASED_STATES:
-            return zip_code
+            return address
         origin = self._get_origin_partner(res_model, res_id, company_id)
         if origin.country_id.code != "US" or origin.state_id.code != state_code:
-            return zip_code  # interstate (or non-US origin) → destination
-        origin_zip = normalize_zip(origin.zip or "")
-        if not origin_zip:
+            return address  # interstate (or non-US origin) → destination
+        if not normalize_zip(origin.zip or ""):
             _logger.warning(
                 "US Tax: %s is origin-based but the ship-from has no ZIP; "
                 "rating at the destination ZIP.",
                 state_code,
             )
-            return zip_code
-        return origin_zip
+            return address
+        return _partner_to_address(origin)
+
+    @api.model
+    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
+        """ZIP to rate from — see ``_sourcing_address``."""
+        return self._sourcing_address(
+            res_model, res_id, company_id, {"zip": zip_code, "state": state_code}
+        )["zip"]
 
     @api.model
     def _get_origin_partner(self, res_model, res_id, company_id):
@@ -285,10 +317,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "tax_amount": 0.0,
                 "marketplace": marketplace,
             }
-            try:
-                apply_fn(result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -297,6 +326,7 @@ class UsTaxEngineService(models.AbstractModel):
                 taxable_amount=0,
                 tax_amount=0,
                 partner_id=partner_id,
+                applied=applied,
             )
             return result
 
@@ -326,10 +356,7 @@ class UsTaxEngineService(models.AbstractModel):
             # Apply even with no tax due — an order may already carry a tax from
             # an earlier calculation; losing nexus afterward must clear/replace
             # it with the explicit exempt tax, not leave it stale.
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -340,6 +367,7 @@ class UsTaxEngineService(models.AbstractModel):
                 state_id=state.id if state else False,
                 nexus_applied=False,
                 partner_id=partner_id,
+                applied=applied,
             )
             return final_result
 
@@ -355,10 +383,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "tax_amount": 0.0,
                 "exemption_reason": exemption_reason,
             }
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -370,11 +395,14 @@ class UsTaxEngineService(models.AbstractModel):
                 nexus_applied=True,
                 partner_id=partner_id,
                 exemption_reason=exemption_reason,
+                applied=applied,
             )
             return final_result
 
         # Step 3.5: Partner-level exemption certificate
         if partner and partner.sudo().us_tax_exempt:
+            final_result = {"source": "exempt_partner", "tax_amount": 0.0, "lines": []}
+            applied = self._apply(apply_fn, final_result, res_model, res_id)
             self._log(
                 res_model,
                 res_id,
@@ -385,12 +413,8 @@ class UsTaxEngineService(models.AbstractModel):
                 state_id=state.id if state else False,
                 nexus_applied=has_nexus,
                 partner_id=partner.id,
+                applied=applied,
             )
-            final_result = {"source": "exempt_partner", "tax_amount": 0.0, "lines": []}
-            try:
-                apply_fn(final_result)
-            except Exception as exc:
-                _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
             return final_result
 
         # Step 4: Initialize cache manager
@@ -398,11 +422,10 @@ class UsTaxEngineService(models.AbstractModel):
         cache = CacheManager(self.env, ttl_hours=ttl)
 
         # Step 4b: Sourcing — origin-based states rate an INTRASTATE sale from the
-        # seller's ship-from; everything else keeps the ship-to ZIP. Only the rate
-        # lookup ZIP changes; nexus/exemption stay on the destination.
-        rate_zip = self._sourcing_zip(
-            res_model, res_id, company_id, zip_code, state_code
-        )
+        # seller's ship-from; everything else keeps the ship-to. Only the rate
+        # lookup address changes; nexus/exemption/log stay on the destination.
+        rate_address = self._sourcing_address(res_model, res_id, company_id, address)
+        rate_zip = rate_address["zip"]
 
         # Step 4c: remote-seller single/simplified local rate — a remote
         # (interstate) seller that has elected (or is subject to) the state's
@@ -464,7 +487,7 @@ class UsTaxEngineService(models.AbstractModel):
                 product_category_code=cat_code,
                 product_category_id=cat_id,
                 doc_date=doc_date,
-                address=address,
+                address=rate_address,
                 cache=cache,
                 engine_mode=engine_mode,
                 fail_policy=fail_policy,
@@ -473,7 +496,12 @@ class UsTaxEngineService(models.AbstractModel):
             # Gate on the STATE rate, not the local total: an electing remote
             # seller collects state + flat single-local even when the local
             # providers miss (the elected rate is flat, not the real local one).
-            if single_local is not None and rate_result.get("state_rate"):
+            # In `combined` mode the flat rate replaces state + local outright,
+            # so it does not need a state rate to build on — an Alabama SSUT
+            # seller owes the 8% whether or not local rate data was loaded.
+            if single_local is not None and (
+                rate_result.get("state_rate") or single_local.get("mode") == "combined"
+            ):
                 rate_result = self._apply_single_local_rate(
                     rate_result, single_local, state_code
                 )
@@ -496,17 +524,22 @@ class UsTaxEngineService(models.AbstractModel):
             "tax_amount": total_tax,
             "lines": results,
         }
-        try:
-            apply_fn(final_result)
-        except Exception as exc:
-            _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+        applied = self._apply(apply_fn, final_result, res_model, res_id)
 
-        # Step 7: Audit log — include state, nexus, rate detail and provider
+        # Step 7: Audit log — document-level best rate plus a per-line snapshot
+        # of what was resolved and what was booked, so an old document can be
+        # reproduced later however the (mutable) tax records evolve.
         best_rate = next(
             (r["rate_detail"] for r in results if r.get("rate_detail")), {}
         )
         # Extract provider_id from best rate result (set in _get_rate)
         used_provider_id = best_rate.get("provider_id", False)
+        line_detail = [self._line_snapshot(r, rate_address) for r in results]
+        rate_mismatch = any(
+            comp.get("rate_mismatch")
+            for snapshot in line_detail
+            for comp in snapshot["components"]
+        )
 
         self._log(
             res_model,
@@ -521,8 +554,56 @@ class UsTaxEngineService(models.AbstractModel):
             state_rate=best_rate.get("state_rate", 0),
             county_rate=best_rate.get("county_rate", 0),
             provider_id=used_provider_id,
+            rate_mismatch=rate_mismatch,
+            line_detail=line_detail,
+            applied=applied,
         )
         return final_result
+
+    @api.model
+    def _apply(self, apply_fn, result, res_model, res_id):
+        """Apply a result to the document; report, never hide, a failure.
+
+        A refusal meant for the user (a locked order, a posted move) is
+        re-raised as is. Any other apply-time error is logged, recorded on
+        the result (``applied=False``, ``apply_error``) and on the audit log
+        as an error, so a caller never stamps a document as recalculated
+        when nothing landed on it.
+        """
+        try:
+            apply_fn(result)
+        except UserError:
+            raise
+        except Exception as exc:
+            _logger.error("Tax apply error on %s %s: %s", res_model, res_id, exc)
+            result["applied"] = False
+            result["apply_error"] = str(exc)
+            return False
+        result["applied"] = True
+        return True
+
+    @api.model
+    def _line_snapshot(self, line_result, rate_address):
+        """Per-line audit snapshot: where the rate was resolved (the ship-from
+        under origin sourcing) and the resolved components, each carrying the
+        record it was booked to once applied (``rate_detail["booked"]``,
+        written by ``_get_or_create_jurisdiction_tax``)."""
+        detail = line_result.get("rate_detail") or {}
+        components = detail.get("booked") or (
+            self._normalize_components(detail) if detail else []
+        )
+        return {
+            "line_id": line_result.get("line_id"),
+            "source": line_result.get("source"),
+            "rated_at": {
+                "zip": rate_address.get("zip", ""),
+                "address": rate_address.get("address", ""),
+            },
+            "subtotal": line_result.get("subtotal", 0),
+            "rate": line_result.get("rate", 0),
+            "tax": line_result.get("tax", 0),
+            "components": components,
+        }
 
     @api.model
     def _get_rate(
@@ -706,6 +787,7 @@ class UsTaxEngineService(models.AbstractModel):
         self = self.sudo()
         order_source = result.get("source", "")
         lines_map = {r["line_id"]: r for r in result.get("lines", [])}
+        doc_date = order.date_order.date() if order.date_order else None
         state_code = (
             order.partner_shipping_id.state_id.code
             if order.partner_shipping_id and order.partner_shipping_id.state_id
@@ -758,7 +840,10 @@ class UsTaxEngineService(models.AbstractModel):
                 continue
 
             tax = self._get_or_create_jurisdiction_tax(
-                state_code, order.company_id, line_result.get("rate_detail", {})
+                state_code,
+                order.company_id,
+                line_result.get("rate_detail", {}),
+                doc_date=doc_date,
             )
             if tax:
                 line.tax_id = [Command.set([tax.id])]
@@ -775,6 +860,7 @@ class UsTaxEngineService(models.AbstractModel):
         self = self.sudo()
         move_source = result.get("source", "")
         lines_map = {r["line_id"]: r for r in result.get("lines", [])}
+        doc_date = move.invoice_date or None
         state_code = (
             move.partner_shipping_id.state_id.code
             if (
@@ -814,16 +900,82 @@ class UsTaxEngineService(models.AbstractModel):
                 continue
 
             tax = self._get_or_create_jurisdiction_tax(
-                state_code, move.company_id, line_result.get("rate_detail", {})
+                state_code,
+                move.company_id,
+                line_result.get("rate_detail", {}),
+                doc_date=doc_date,
             )
             if tax:
                 line.tax_ids = [Command.set([tax.id])]
+        self._write_historical_tax_amounts(move, lines_map)
+
+    @api.model
+    def _write_historical_tax_amounts(self, move, lines_map):
+        """Book a back-dated invoice at the rate of its date.
+
+        A component flagged ``rate_mismatch`` resolved a historical rate but
+        was booked to the shared record, which carries the rate in force. The
+        record is never rewound (that would re-rate every open draft); instead
+        the invoice's own tax line is scaled to the historical amount. Core
+        keeps a manually set tax-line amount through posting and rebalances
+        the receivable, so the posted entry pays the rate of its date while
+        the record stays current. Runs once, after every line's taxes are
+        set, because each ``tax_ids`` write re-syncs the tax lines.
+        """
+        pct_by_tax = {}
+        for line_result in lines_map.values():
+            for comp in (line_result.get("rate_detail") or {}).get("booked", []):
+                if comp.get("rate_mismatch") and comp.get("tax_id"):
+                    pct_by_tax[comp["tax_id"]] = comp["pct"]
+                    comp["historical_amount_written"] = True
+        if not pct_by_tax:
+            return
+        # Absolute targets from the base lines (not a factor on the current
+        # amount): the post-time recalculation runs this again on a line that
+        # already carries the historical amount.
+        outbound_sign = (
+            -1.0 if move.move_type in ("out_invoice", "out_receipt") else 1.0
+        )
+        commands = []
+        for tax_line in move.line_ids.filtered(
+            lambda t: t.tax_line_id.id in pct_by_tax
+        ):
+            tax = tax_line.tax_line_id
+            base = sum(
+                line.price_subtotal
+                for line in move.invoice_line_ids
+                if tax in line.tax_ids | line.tax_ids.children_tax_ids
+            )
+            sign = copysign(1.0, tax_line.amount_currency or outbound_sign)
+            amount_currency = move.currency_id.round(
+                sign * base * pct_by_tax[tax.id] / 100
+            )
+            ratio = (
+                tax_line.balance / tax_line.amount_currency
+                if tax_line.amount_currency
+                else 1.0
+            )
+            commands.append(
+                Command.update(
+                    tax_line.id,
+                    {
+                        "amount_currency": amount_currency,
+                        "balance": move.company_id.currency_id.round(
+                            amount_currency * ratio
+                        ),
+                    },
+                )
+            )
+        if commands:
+            move.write({"line_ids": commands})
 
     # Per-level scalar components, in a fixed order, from the shared taxonomy.
     _JURISDICTION_LEVELS = RATE_COMPONENTS
 
     @api.model
-    def _get_or_create_jurisdiction_tax(self, state_code, company, rate_detail):
+    def _get_or_create_jurisdiction_tax(
+        self, state_code, company, rate_detail, doc_date=None
+    ):
         """Return an account.tax that books US Sales Tax per jurisdiction.
 
         Instead of one combined-rate tax per state (which erases the breakdown
@@ -839,6 +991,11 @@ class UsTaxEngineService(models.AbstractModel):
         component applies, that single child is returned directly (no needless
         group); a provider returning only a total rate yields one ``combined``
         child so the amount is still captured (flagged for manual allocation).
+
+        ``doc_date`` lets a component decide whether its resolved rate is the
+        one in force (see ``_get_or_create_component_tax``); the booking
+        outcome per component is written back to ``rate_detail["booked"]``
+        for the audit log.
         """
         if not state_code:
             return False
@@ -861,13 +1018,17 @@ class UsTaxEngineService(models.AbstractModel):
         children = self.env["account.tax"]
         for comp in components:
             children |= self._get_or_create_component_tax(
-                state_code, state, company, comp, tax_group
+                state_code, state, company, comp, tax_group, doc_date=doc_date
             )
+        if isinstance(rate_detail, dict):
+            rate_detail["booked"] = [dict(comp) for comp in components]
 
         if len(children) == 1:
             return children
 
-        total_pct = round(sum(c["pct"] for c in components), 4)
+        # Label from the amounts the children carry, not the resolved rates:
+        # a back-dated mismatch must not flip the group's name back and forth.
+        total_pct = round(sum(c["booked_pct"] for c in components), 4)
         return self._get_or_create_group_tax(
             state_code, company, total_pct, children, tax_group
         )
@@ -895,6 +1056,7 @@ class UsTaxEngineService(models.AbstractModel):
                         "label": jur.get("label") or level.title(),
                         "pct": pct,
                         "jurisdiction_id": jur.get("jurisdiction_id", False),
+                        "category_id": jur.get("category_id", False),
                     }
                 )
             return comps
@@ -905,6 +1067,7 @@ class UsTaxEngineService(models.AbstractModel):
                 "label": label,
                 "pct": round(float(rate_detail.get(key, 0.0)) * 100, 4),
                 "jurisdiction_id": False,
+                "category_id": False,
             }
             for level, label, key in self._JURISDICTION_LEVELS
         ]
@@ -1007,77 +1170,187 @@ class UsTaxEngineService(models.AbstractModel):
             lines.sudo().write({"account_id": account.id})
 
     @api.model
-    def _get_or_create_component_tax(self, state_code, state, company, comp, tax_group):
-        """Get/create the per-jurisdiction child tax for one rate component.
+    def _get_or_create_component_tax(
+        self, state_code, state, company, comp, tax_group, doc_date=None
+    ):
+        """Get/create the child tax booking one rate component.
 
-        ``comp`` is ``{level, label, pct, jurisdiction_id}``. A resolved named
-        jurisdiction is keyed into both the name and the search domain so two
-        distinct jurisdictions sharing a rate (e.g. two special districts) don't
-        collide on one tax record.
+        ``comp`` is ``{level, label, pct, jurisdiction_id, category_id}``.
+
+        A component with a resolved jurisdiction books to ONE stable
+        ``account.tax`` per ``(company, level, state, jurisdiction, product
+        tax category)``: the tag tuple is the identity, the name is a label
+        without the rate, and
+        ``amount`` is the rate in force. Posted tax lines keep their own frozen
+        amounts (core refuses tax changes on a posted line), so a rate change
+        updates the record in place rather than minting one record per rate
+        version; the effective-dated ``us.tax.rate`` table and the per-line
+        snapshot on ``us.tax.calculation.log`` are the authority on history.
+
+        A back-dated document whose resolved rate is no longer the one in
+        force is booked at the current amount and flagged
+        (``comp["rate_mismatch"]``, logged as ``rate_mismatch``); the record
+        is never rewritten to a historical rate, which would re-rate every
+        open draft.
+
+        An anonymous level-only component (no resolved jurisdiction — what
+        API providers return) keeps the rate in its identity: without a
+        jurisdiction "US Sales Tax TX County" would flip between Harris and
+        Travis on every calculation.
         """
         Tax = self.env["account.tax"].sudo()
         level = comp["level"]
         label = comp["label"]
         pct = comp["pct"]
         jurisdiction_id = comp.get("jurisdiction_id") or False
+        # A category-specific rate row is its own component: the same
+        # jurisdiction taxes groceries and general goods at different rates on
+        # the same day, and one record cannot carry both amounts.
+        category_id = comp.get("category_id") or False
         state_id = state.id if state else False
-        label_part = f"{label} " if label else ""
-        name = f"US Sales Tax {state_code} {label_part}{pct:.4g}%"
-        description = f"US Sales Tax — {state_code} {label_part}@ {pct:.4g}%"
-        domain = [
-            ("name", "=", name),
+        base_domain = [
             ("type_tax_use", "=", "sale"),
             ("amount_type", "=", "percent"),
             ("company_id", "=", company.id),
         ]
+        vals = {
+            "type_tax_use": "sale",
+            "amount_type": "percent",
+            "amount": pct,
+            "company_id": company.id,
+            "country_id": self._us_tax_country_id(company),
+            "tax_group_id": tax_group.id,
+            "us_tax_level": level,
+            "us_tax_state_id": state_id,
+            "us_tax_jurisdiction_id": jurisdiction_id,
+            "us_tax_product_category_id": category_id,
+        }
+        comp["rate_mismatch"] = False
+
         if jurisdiction_id:
-            domain.append(("us_tax_jurisdiction_id", "=", jurisdiction_id))
-        tax = Tax.search(domain, limit=1)
-        if not tax and jurisdiction_id:
-            # The name may already be taken by another jurisdiction sharing the
-            # same display label and rate (two same-named cities in one state)
-            # or by a legacy tax without jurisdiction tagging — disambiguate
-            # instead of tripping the unique-name constraint mid-apply.
+            name = f"US Sales Tax {state_code} {label}".strip()
+            if category_id:
+                category = self.env["us.tax.product.category"].browse(category_id)
+                name = f"{name} ({category.code})"
             alt_name = f"{name} [#{jurisdiction_id}]"
-            tax = Tax.search([("name", "=", alt_name)] + domain[1:], limit=1)
-            if not tax and Tax.search_count(
-                [("name", "=", name), ("company_id", "=", company.id)], limit=1
+            description = f"US Sales Tax — {state_code} {label}".strip()
+            tag_domain = base_domain + [
+                ("us_tax_level", "=", level),
+                ("us_tax_state_id", "=", state_id),
+                ("us_tax_jurisdiction_id", "=", jurisdiction_id),
+                ("us_tax_product_category_id", "=", category_id),
+            ]
+            # Prefer a record already at this rate (unchanged, or a legacy
+            # per-rate record), else the latest one for the jurisdiction.
+            candidates = Tax.search(tag_domain, order="id desc")
+            tax = next(
+                (
+                    t
+                    for t in candidates
+                    if float_compare(t.amount, pct, precision_digits=4) == 0
+                ),
+                candidates[:1],
+            )
+            if not tax:
+                # Two same-named places in one state share the label; the
+                # jurisdiction id disambiguates.
+                free = self._free_tax_name(company, name, alt_name)
+                tax = Tax.create(
+                    dict(
+                        vals,
+                        name=free or f"{alt_name} {pct:.4g}%",
+                        description=description,
+                    )
+                )
+                _logger.info('Created jurisdiction tax "%s" at %s%%', tax.name, pct)
+            else:
+                if float_compare(tax.amount, pct, precision_digits=4) != 0:
+                    if self._component_rate_is_current(
+                        jurisdiction_id, level, pct, doc_date, category_id
+                    ):
+                        _logger.info(
+                            'Jurisdiction tax "%s": rate %s%% -> %s%%',
+                            tax.name,
+                            tax.amount,
+                            pct,
+                        )
+                        tax.write({"amount": pct})
+                    else:
+                        comp["rate_mismatch"] = True
+                if tax.name not in (name, alt_name):
+                    # Legacy per-rate label ("... County 1%"): drop the rate.
+                    free = self._free_tax_name(company, name, alt_name)
+                    if free:
+                        tax.write({"name": free, "description": description})
+        else:
+            label_part = f"{label} " if label else ""
+            name = f"US Sales Tax {state_code} {label_part}{pct:.4g}%"
+            description = f"US Sales Tax — {state_code} {label_part}@ {pct:.4g}%"
+            # Never a jurisdiction's record, even when its label degraded to
+            # the bare level word: sharing it would let this component's
+            # rate updates re-rate that jurisdiction's drafts. When such a
+            # record holds the name, this component lives under a suffix.
+            names = [name, f"{name} [level-only]"]
+            tax = Tax.search(
+                base_domain
+                + [("name", "in", names), ("us_tax_jurisdiction_id", "=", False)],
+                order="id",
+                limit=1,
+            )
+            if not tax:
+                free = self._free_tax_name(company, *names) or names[-1]
+                tax = Tax.create(dict(vals, name=free, description=description))
+                _logger.info('Created jurisdiction tax "%s" at %s%%', free, pct)
+            elif tax.us_tax_level != level or (
+                state and tax.us_tax_state_id.id != state_id
             ):
-                name = alt_name
-                description = f"{description} [#{jurisdiction_id}]"
-        if not tax:
-            tax = Tax.create(
-                {
-                    "name": name,
-                    "type_tax_use": "sale",
-                    "amount_type": "percent",
-                    "amount": pct,
-                    "company_id": company.id,
-                    "country_id": self._us_tax_country_id(company),
-                    "tax_group_id": tax_group.id,
-                    "us_tax_level": level,
-                    "us_tax_state_id": state_id,
-                    "us_tax_jurisdiction_id": jurisdiction_id,
-                    "description": description,
-                }
-            )
-            _logger.info('Created jurisdiction tax "%s" at %s%%', name, pct)
-        elif (
-            tax.us_tax_level != level
-            or (state and tax.us_tax_state_id.id != state_id)
-            or (jurisdiction_id and tax.us_tax_jurisdiction_id.id != jurisdiction_id)
-        ):
-            # Heal tags on a tax created before this version booked jurisdictions.
-            tax.write(
-                {
-                    "us_tax_level": level,
-                    "us_tax_state_id": state_id,
-                    "us_tax_jurisdiction_id": jurisdiction_id,
-                }
-            )
+                # Heal the level/state tags on a tax created before this
+                # version booked jurisdictions.
+                tax.write({"us_tax_level": level, "us_tax_state_id": state_id})
+        comp.update(tax_id=tax.id, tax_name=tax.name, booked_pct=tax.amount)
         # Always book collected tax to the payable liability (heals old taxes).
         self._ensure_tax_account(tax, company)
         return tax
+
+    @api.model
+    def _component_rate_is_current(
+        self, jurisdiction_id, level, pct, doc_date, category_id=False
+    ):
+        """Whether ``pct`` is the rate in force today for this component.
+
+        A document dated today (or undated) always is. For a dated document
+        the local rate table decides: when it has a row for today, the
+        resolved rate must match that row's component. Without one there is
+        no evidence of a change — API providers return today's rate whatever
+        the document date — so the resolved rate is taken as current.
+        """
+        today = fields.Date.context_today(self)
+        if not doc_date or doc_date == today:
+            return True
+        rate = self.env["us.tax.rate"].get_rate_for_date(
+            jurisdiction_id, today, product_category_id=category_id
+        )
+        if not rate:
+            return True
+        field = RATE_FIELD_BY_LEVEL.get(level, "total_rate")
+        current_pct = round(float(rate[field]) * 100, 4)
+        return float_compare(current_pct, pct, precision_digits=4) == 0
+
+    @api.model
+    def _free_tax_name(self, company, *candidates):
+        """First candidate no account.tax in the company's tree uses, or ''.
+
+        Core enforces tax-name uniqueness across a root company and its
+        branches, so the check must span the tree, not the one company.
+        """
+        Tax = self.env["account.tax"].sudo().with_context(active_test=False)
+        for name in candidates:
+            if not Tax.search_count(
+                [("name", "=", name), ("company_id", "child_of", company.root_id.id)],
+                limit=1,
+            ):
+                return name
+        return ""
 
     @api.model
     def _get_or_create_group_tax(
@@ -1091,32 +1364,33 @@ class UsTaxEngineService(models.AbstractModel):
         Houston 6.25+2 — both TX 8.25%), so a name/total key would silently
         rewrite one destination's booking with the other's. The name is only
         a display label, disambiguated when already taken (e.g. by a group
-        with a different composition, or a legacy combined-rate percent tax).
+        with a different composition, or a legacy combined-rate percent tax),
+        and refreshed when a child's rate change moves the combined total —
+        the composition, and so the record, is unchanged.
         """
         Tax = self.env["account.tax"].sudo()
         child_ids = set(children.ids)
+        base_name = f"US Sales Tax {state_code} {total_pct:.4g}%"
+        description = f"US Sales Tax — {state_code} @ {total_pct:.4g}%"
         for candidate in Tax.search(
             [
                 ("type_tax_use", "=", "sale"),
                 ("amount_type", "=", "group"),
                 ("company_id", "=", company.id),
                 ("tax_group_id", "=", tax_group.id),
+                ("children_tax_ids", "in", children.ids),
             ]
         ):
             if set(candidate.children_tax_ids.ids) == child_ids:
+                if not candidate.name.startswith(base_name):
+                    name = self._group_tax_name(company, base_name, children)
+                    if name:
+                        candidate.write({"name": name, "description": description})
                 return candidate
 
-        base_name = f"US Sales Tax {state_code} {total_pct:.4g}%"
-        composition = ", ".join(f"{c.amount:.4g}" for c in children)
-        for name in (
-            base_name,
-            f"{base_name} ({composition})",
-            f"{base_name} [{'-'.join(str(i) for i in sorted(child_ids))}]",
-        ):
-            if not Tax.search_count(
-                [("name", "=", name), ("company_id", "=", company.id)], limit=1
-            ):
-                break
+        name = self._group_tax_name(company, base_name, children) or (
+            f"{base_name} [{'-'.join(str(i) for i in sorted(child_ids))}]"
+        )
         tax = Tax.create(
             {
                 "name": name,
@@ -1126,11 +1400,21 @@ class UsTaxEngineService(models.AbstractModel):
                 "company_id": company.id,
                 "country_id": self._us_tax_country_id(company),
                 "tax_group_id": tax_group.id,
-                "description": f"US Sales Tax — {state_code} @ {total_pct:.4g}%",
+                "description": description,
             }
         )
         _logger.info('Created group tax "%s" at %s%%', name, total_pct)
         return tax
+
+    @api.model
+    def _group_tax_name(self, company, base_name, children):
+        composition = ", ".join(f"{c.amount:.4g}" for c in children)
+        return self._free_tax_name(
+            company,
+            base_name,
+            f"{base_name} ({composition})",
+            f"{base_name} [{'-'.join(str(i) for i in sorted(children.ids))}]",
+        )
 
     @api.model
     def _get_or_create_exempt_tax(self, company):
@@ -1166,6 +1450,7 @@ class UsTaxEngineService(models.AbstractModel):
                     "amount_type": "percent",
                     "amount": 0.0,
                     "company_id": company.id,
+                    "country_id": self._us_tax_country_id(company),
                     "tax_group_id": tax_group.id,
                     "description": (
                         "US Sales Tax — Exempt (product category or no "
@@ -1195,6 +1480,9 @@ class UsTaxEngineService(models.AbstractModel):
         county_rate=0,
         partner_id=None,
         exemption_reason=None,
+        rate_mismatch=False,
+        line_detail=None,
+        applied=True,
     ):
         # Resolve state_id from address if not provided
         if not state_id and address.get("state"):
@@ -1222,7 +1510,10 @@ class UsTaxEngineService(models.AbstractModel):
                 "taxable_amount": taxable_amount,
                 "tax_amount": tax_amount,
                 "exemption_reason": exemption_reason or "",
+                "rate_mismatch": rate_mismatch,
+                "line_detail": line_detail or [],
                 "calculated_by": self.env.user.id,
-                "status": "success" if source not in ("error",) else "error",
+                "status": "success" if applied and source != "error" else "error",
+                "error_message": "" if applied else "Result could not be applied.",
             }
         )

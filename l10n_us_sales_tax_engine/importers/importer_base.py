@@ -98,6 +98,9 @@ class ImporterBase(ABC):
             [
                 ("zip", "=", zip_code),
                 ("jurisdiction_id", "=", jurisdiction.id),
+                # A learned rooftop is not this import's row: adopting it
+                # would tie it to the batch and delete it on rollback.
+                ("address_key", "in", [False, ""]),
             ],
             limit=1,
         )

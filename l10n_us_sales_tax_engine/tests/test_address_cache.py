@@ -67,6 +67,36 @@ class TestAddressJurisdictionCache(UsTaxBaseTest):
         # ZIP-level resolution is untouched.
         self.assertEqual(self.ZM.get_best_jurisdiction("33101", "FL"), self.jur_miami)
 
+    def test_learned_rooftop_never_becomes_the_zip_answer(self):
+        """A learned rooftop answers for ITS address only. With confidence 1.0
+        it must not outrank the imported ZIP-level guess for every other
+        address in a ZIP that straddles jurisdictions."""
+        self.ZM.create(
+            {
+                "zip": "33199",
+                "state_id": self.fl.id,
+                "jurisdiction_id": self.jur_miami.id,
+                "confidence": 0.8,
+                "source": "import",
+            }
+        )
+        rooftop = dict(self.addr, zip="33199", address="1 Rooftop Way, Miami, FL 33199")
+        other = dict(self.addr, zip="33199", address="9 Elsewhere Ave, Miami, FL 33199")
+        self.ZM.learn_jurisdiction(rooftop, self.jur_broward, source="api")
+        self.assertEqual(self.ZM.get_best_jurisdiction("33199", "FL"), self.jur_miami)
+        self.assertEqual(self.ZM.resolve_jurisdiction(other), self.jur_miami)
+        self.assertEqual(self.ZM.resolve_jurisdiction(rooftop), self.jur_broward)
+
+    def test_rooftop_is_the_fallback_when_a_zip_has_no_zip_level_row(self):
+        """With no imported row for the ZIP at all, another street still
+        resolves to the learned rooftop's jurisdiction — the best available
+        guess beats no rate (which would book $0 under the warn policy)."""
+        rooftop = dict(self.addr, zip="33198", address="1 Only Way, Miami, FL 33198")
+        other = dict(self.addr, zip="33198", address="2 Other St, Miami, FL 33198")
+        self.ZM.learn_jurisdiction(rooftop, self.jur_broward, source="api")
+        self.assertEqual(self.ZM.get_best_jurisdiction("33198", "FL"), self.jur_broward)
+        self.assertEqual(self.ZM.resolve_jurisdiction(other), self.jur_broward)
+
     def test_learn_is_idempotent_one_row_per_address(self):
         self.ZM.learn_jurisdiction(self.addr, self.jur_broward)
         self.ZM.learn_jurisdiction(self.addr, self.jur_broward)

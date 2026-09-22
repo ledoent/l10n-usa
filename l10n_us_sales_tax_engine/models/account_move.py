@@ -3,6 +3,9 @@
 import logging
 
 from odoo import fields, models
+from odoo.exceptions import UserError
+
+from ..services.provider_base import ProviderError
 
 _logger = logging.getLogger(__name__)
 
@@ -24,12 +27,17 @@ class AccountMove(models.Model):
         engine = self.env["us.tax.engine.service"]
         try:
             result = engine.calculate_for_invoice(self)
-            self.write(
-                {
-                    "us_tax_source": result.get("source", ""),
-                    "us_tax_calculated_at": fields.Datetime.now(),
-                }
-            )
+            if result.get("applied", True):
+                self.write(
+                    {
+                        "us_tax_source": result.get("source", ""),
+                        "us_tax_calculated_at": fields.Datetime.now(),
+                    }
+                )
+        except UserError:
+            # A refusal the user is meant to read (e.g. the move is posted) is
+            # not an engine error — re-raise without logging one.
+            raise
         except Exception as exc:
             _logger.error("US Tax calculation error on invoice %s: %s", self.name, exc)
             raise
@@ -52,9 +60,14 @@ class AccountMove(models.Model):
         if ICP.get_param("l10n_us_tax.engine_active", "False") == "True":
             for move in self.filtered(
                 lambda m: m.move_type in ("out_invoice", "out_refund")
+                and m.state == "draft"
             ):
                 try:
                     self.env["us.tax.engine.service"].calculate_for_invoice(move)
+                except (UserError, ProviderError):
+                    # A refusal for the user, or the "block" fail policy: the
+                    # move must not post with stale or missing tax.
+                    raise
                 except Exception as exc:
                     _logger.error("US Tax auto-calc on post failed: %s", exc)
         return super()._post(soft=soft)

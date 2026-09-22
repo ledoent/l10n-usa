@@ -35,3 +35,11 @@ class AccountTax(models.Model):
         "providers that only return rate components leave this empty; the "
         "level + state still allow state-return aggregation.",
     )
+    us_tax_product_category_id = fields.Many2one(
+        "us.tax.product.category",
+        string="US Tax Product Category",
+        index=True,
+        ondelete="set null",
+        help="Set when the jurisdiction taxes this product category at its own "
+        "rate (a category-specific rate row); empty for the general rate.",
+    )

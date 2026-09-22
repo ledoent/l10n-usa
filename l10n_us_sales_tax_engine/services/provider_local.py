@@ -104,6 +104,8 @@ class ProviderLocal(ProviderBase):
                 "level": level,
                 "rate": value,
                 "label": label_by_level[level],
+                # A category-specific row books to its own record.
+                "category_id": rate.product_tax_category_id.id,
             }
             for level, value in (
                 ("state", rate.state_rate),

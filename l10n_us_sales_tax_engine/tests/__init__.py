@@ -14,3 +14,5 @@ from . import test_sourcing  # noqa: F401
 from . import test_single_local  # noqa: F401
 from . import test_address_cache  # noqa: F401
 from . import test_jurisdiction_booking  # noqa: F401
+from . import test_booking_edge_cases  # noqa: F401
+from . import test_sale_tax_source  # noqa: F401

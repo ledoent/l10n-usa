@@ -50,6 +50,15 @@ class ResConfigSettings(models.TransientModel):
     us_tax_payable_account_id = fields.Many2one(
         related="company_id.us_tax_payable_account_id", readonly=False
     )
+    us_tax_sale_tax_adopted = fields.Boolean(
+        related="company_id.us_tax_sale_tax_adopted"
+    )
+
+    def action_us_tax_adopt_sale_tax_source(self):
+        return self.company_id.action_us_tax_adopt_sale_tax_source()
+
+    def action_us_tax_restore_sale_tax_source(self):
+        return self.company_id.action_us_tax_restore_sale_tax_source()
 
     def _sync_provider_active(self, code, enabled):
         provider = (
