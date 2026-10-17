@@ -18,23 +18,34 @@ class TestChartAcount(TransactionCase):
     def test_basic(self):
         _logger.debug("Creating chart of account")
         self.company = self.env["res.company"].create({"name": "US test company"})
-        self.env.ref("base.group_multi_company").write({"users": [(4, self.env.uid)]})
+        self.env.ref("base.group_multi_company").write(
+            {"user_ids": [(4, self.env.uid)]}
+        )
         self.env.user.write(
             {"company_ids": [(4, self.company.id)], "company_id": self.company.id}
         )
         self.env["account.chart.template"].try_loading(
             template_code="us_gaap", company=self.company, install_demo=False
         )
-        self.with_context(company_id=self.company.id, force_company=self.company.id)
-        bank_account = self.env["account.account"].search(
-            [("code", "=", "111102"), ("company_id", "=", self.company.id)]
+        # 20.0 shares accounts across companies: account.account.company_id is
+        # gone in favour of company_ids, and `code` is no longer stored at all
+        # (the stored column is code_store) because it is company-dependent.
+        # Both together mean a code lookup only resolves with the company in
+        # context, which is what with_company supplies.
+        accounts = self.env["account.account"].with_company(self.company)
+        bank_account = accounts.search(
+            [("code", "=", "111102"), ("company_ids", "in", self.company.id)]
         )
-        liquidity_transfer = self.env["account.account"].search(
-            [("code", "=", "111701"), ("company_id", "=", self.company.id)]
+        liquidity_transfer = accounts.search(
+            [("code", "=", "111701"), ("company_ids", "in", self.company.id)]
         )
-        finished_goods = self.env["account.account"].search(
-            [("code", "=", "133000"), ("company_id", "=", self.company.id)]
+        finished_goods = accounts.search(
+            [("code", "=", "133000"), ("company_ids", "in", self.company.id)]
         )
         self.assertEqual(bank_account.name, "Bank Suspense Account")
-        self.assertEqual(liquidity_transfer.name, "Liquidity Transfer")
+        # Core generates this account from transfer_account_code_prefix rather
+        # than from the chart CSV, and 20.0 renamed it: chart_template.py:905
+        # now reads _("Funds in Transit"). (The docstring 18 lines below it
+        # still says "Liquidity Transfer Account" — stale upstream, not a clue.)
+        self.assertEqual(liquidity_transfer.name, "Funds in Transit")
         self.assertEqual(finished_goods.name, "Finished Goods")
