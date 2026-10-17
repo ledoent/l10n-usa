@@ -12,7 +12,7 @@ class AccountPayment1099Report(models.Model):
 
     date = fields.Date("Payment Date", readonly=True)
     amount = fields.Float("Payment Amount", readonly=True)
-    vendor_id = fields.Many2one("res.partner", "Vendor", readonly=True)
+    vendor_id = fields.Many2one("res.partner", readonly=True)
     type_1099 = fields.Many2one("type.1099", "1099 Type", readonly=True)
     box_1099_misc = fields.Many2one("box.1099.misc", "1099-MISC Box", readonly=True)
 
@@ -45,8 +45,8 @@ class AccountPayment1099Report(models.Model):
         """
 
     def init(self):
-        tools.drop_view_if_exists(self._cr, self._table)
-        self._cr.execute(
+        tools.drop_view_if_exists(self.env.cr, self._table)
+        self.env.cr.execute(
             f"CREATE OR REPLACE VIEW {self._table} AS ("
             f"{self._select()}"
             f"{self._from()}"
