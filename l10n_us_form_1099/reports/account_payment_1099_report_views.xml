@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
     <!-- Copyright (C) 2019-2024 Brian McMaster
          Copyright (C) 2019-2024 Open Source Integrators
@@ -30,7 +31,7 @@
         <field name="arch" type="xml">
             <search string="1099 Payment Analysis">
                 <field name="date" />
-                <group expand="1" string="Group By">
+                <group name="group_by">
                     <filter
                         string="Vendor"
                         name="group_by_vendor"
@@ -63,9 +64,9 @@
         </field>
     </record>
     <menuitem
+        id="menu_action_account_payment_report_1099"
         name="1099 Report"
         action="action_account_payment_report_1099"
-        id="menu_action_account_payment_report_1099"
         parent="account.menu_finance_reports"
         sequence="2"
     />

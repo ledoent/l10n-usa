@@ -4,7 +4,7 @@
 
 {
     "name": "US Form 1099",
-    "version": "19.0.1.0.0",
+    "version": "20.0.1.0.0",
     "author": "Open Source Integrators, "
     "Brian McMaster, "
     "Odoo Community Association (OCA)",
@@ -17,11 +17,11 @@
     "data": [
         "data/type_1099_data.xml",
         "data/box_1099_misc_data.xml",
-        "security/ir.model.access.csv",
         "views/type_1099_views.xml",
         "views/box_1099_misc_views.xml",
         "views/res_partner_views.xml",
         "reports/account_payment_1099_report_views.xml",
+        "security/ir.access.csv",
     ],
     "installable": True,
     "development_status": "Production/Stable",
