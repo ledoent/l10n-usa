@@ -1,6 +1,6 @@
 {
     "name": "United States Sample GAAP Chart of Accounts",
-    "version": "20.0.1.0.0",
+    "version": "20.0.1.0.1",
     "development_status": "Mature",
     "category": "Accounting/Localizations/Account Charts",
     "countries": ["us"],
@@ -8,10 +8,6 @@
     "maintainers": ["JordiBForgeFlow"],
     "website": "https://github.com/OCA/l10n-usa",
     "depends": ["account"],
-    "data": [
-        "data/account_chart_template_data_load.xml",
-        "data/res_company_data.xml",
-    ],
     "installable": True,
     "license": "AGPL-3",
 }

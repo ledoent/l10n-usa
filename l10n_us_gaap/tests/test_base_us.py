@@ -16,6 +16,11 @@ class TestChartAcount(TransactionCase):
         return self
 
     def test_basic(self):
+        existing = self.env.company
+        existing_chart = existing.chart_template
+        existing_paperformat = existing.paperformat_id
+        accounts = self.env["account.account"].with_company(existing)
+        existing_accounts = accounts.search([("company_ids", "in", existing.id)])
         _logger.debug("Creating chart of account")
         self.company = self.env["res.company"].create({"name": "US test company"})
         self.env.ref("base.group_multi_company").write(
@@ -26,6 +31,12 @@ class TestChartAcount(TransactionCase):
         )
         self.env["account.chart.template"].try_loading(
             template_code="us_gaap", company=self.company, install_demo=False
+        )
+        self.assertEqual(self.company.chart_template, "us_gaap")
+        self.assertEqual(existing.chart_template, existing_chart)
+        self.assertEqual(existing.paperformat_id, existing_paperformat)
+        self.assertEqual(
+            accounts.search([("company_ids", "in", existing.id)]), existing_accounts
         )
         # 20.0 shares accounts across companies: account.account.company_id is
         # gone in favour of company_ids, and `code` is no longer stored at all
