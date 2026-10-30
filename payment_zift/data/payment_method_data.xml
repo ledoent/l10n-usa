@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo noupdate="1">
+    <!--
+        Each provider owns its own payment.method records — there is a
+        UNIQUE(provider_id, code) constraint, and the payment form deduplicates
+        across providers at runtime by code.
+
+        `active` is deliberately not set. `_activate_default_pms()` turns on the
+        primaries listed in const.DEFAULT_PAYMENT_METHOD_CODES at install, and
+        cascades to their brands.
+    -->
+
+    <!-- === PRIMARY PAYMENT METHODS === -->
+
+    <record id="payment_method_card" model="payment.method">
+        <field name="name">Card</field>
+        <field name="code">card</field>
+        <field name="sequence" eval="10" />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field name="image" type="bytes" file="payment/static/img/card.png" />
+        <field name="support_tokenization" eval="True" />
+        <field name="support_manual_capture">full_only</field>
+        <field name="support_refund">partial</field>
+    </record>
+
+    <!--
+        Manual capture is "none" for ACH on purpose. Authorise-then-capture is
+        a card primitive; a bank debit is submitted or it is not.
+    -->
+    <record id="payment_method_ach_direct_debit" model="payment.method">
+        <field name="name">ACH Direct Debit</field>
+        <field name="code">ach_direct_debit</field>
+        <field name="sequence" eval="20" />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field
+            name="image"
+            type="bytes"
+            file="payment/static/img/ach_direct_debit.png"
+        />
+        <field name="support_tokenization" eval="True" />
+        <field name="support_manual_capture">none</field>
+        <field name="support_refund">partial</field>
+        <field
+            name="supported_country_ids"
+            eval="[Command.set([ref('base.us'), ref('base.pr')])]"
+        />
+        <field name="supported_currency_ids" eval="[Command.set([ref('base.USD')])]" />
+    </record>
+
+    <!-- === PAYMENT METHOD BRANDS === -->
+
+    <record id="payment_method_visa" model="payment.method">
+        <field name="name">VISA</field>
+        <field name="code">visa</field>
+        <field name="sequence" eval="50" />
+        <field
+            name="primary_payment_method_id"
+            eval="ref('payment_zift.payment_method_card')"
+        />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field name="image" type="bytes" file="payment/static/img/visa.png" />
+    </record>
+
+    <record id="payment_method_mastercard" model="payment.method">
+        <field name="name">MasterCard</field>
+        <field name="code">mastercard</field>
+        <field name="sequence" eval="51" />
+        <field
+            name="primary_payment_method_id"
+            eval="ref('payment_zift.payment_method_card')"
+        />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field name="image" type="bytes" file="payment/static/img/mastercard.png" />
+    </record>
+
+    <record id="payment_method_amex" model="payment.method">
+        <field name="name">American Express</field>
+        <field name="code">amex</field>
+        <field name="sequence" eval="52" />
+        <field
+            name="primary_payment_method_id"
+            eval="ref('payment_zift.payment_method_card')"
+        />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field name="image" type="bytes" file="payment/static/img/amex.png" />
+    </record>
+
+    <record id="payment_method_discover" model="payment.method">
+        <field name="name">Discover</field>
+        <field name="code">discover</field>
+        <field name="sequence" eval="53" />
+        <field
+            name="primary_payment_method_id"
+            eval="ref('payment_zift.payment_method_card')"
+        />
+        <field name="provider_id" ref="payment_zift.payment_provider_zift" />
+        <field name="image" type="bytes" file="payment/static/img/discover.png" />
+    </record>
+</odoo>
