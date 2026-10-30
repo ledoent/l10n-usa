@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Copyright 2026 Ledo Enterprises
+     License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl). -->
+<odoo>
+    <!--
+        The inline form.
+
+        READ readme/CONFIGURE.md BEFORE DEPLOYING THIS.
+
+        Zift's proxynization is not an iframe. These inputs are on the
+        merchant's own page, and the tokenizer script reads them from here.
+        Under the PCI SSC's division that is a merchant-script implementation,
+        which is SAQ A-EP rather than SAQ A. Zift's Hosted Payment Pages
+        redirect is the SAQ A alternative. That trade-off was made
+        deliberately; it is not a detail of this template.
+
+        No value typed here is ever posted to Odoo. The script exchanges them
+        with Zift for a token, and only the token leaves the browser.
+    -->
+    <template id="inline_form">
+        <div
+            name="o_zift_form"
+            class="o_zift_form"
+            t-att-data-zift-inline-form-values="provider_sudo._zift_get_inline_form_values()"
+        >
+            <t t-if="pm_sudo.code == 'card'">
+                <div class="mb-3">
+                    <label for="o_zift_card" class="col-form-label">Card Number</label>
+                    <input
+                        id="o_zift_card"
+                        class="form-control"
+                        type="text"
+                        required=""
+                        maxlength="19"
+                        autocomplete="cc-number"
+                    />
+                </div>
+                <div class="row">
+                    <div class="col-sm-8 mb-3">
+                        <label for="o_zift_month">Expiration</label>
+                        <div class="input-group">
+                            <input
+                                id="o_zift_month"
+                                class="form-control"
+                                type="number"
+                                placeholder="MM"
+                                min="1"
+                                max="12"
+                                required=""
+                            />
+                            <input
+                                id="o_zift_year"
+                                class="form-control"
+                                type="number"
+                                placeholder="YY"
+                                min="0"
+                                max="99"
+                                required=""
+                            />
+                        </div>
+                    </div>
+                    <div class="col-sm-4 mb-3">
+                        <label for="o_zift_code">Security Code</label>
+                        <input
+                            id="o_zift_code"
+                            class="form-control"
+                            type="number"
+                            max="9999"
+                        />
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label
+                        for="o_zift_holder_name"
+                        class="col-form-label"
+                    >Name on Card</label>
+                    <input
+                        id="o_zift_holder_name"
+                        class="form-control"
+                        type="text"
+                        required=""
+                        autocomplete="cc-name"
+                    />
+                </div>
+            </t>
+            <t t-else="">
+                <div class="mb-3">
+                    <label
+                        for="o_zift_account_name"
+                        class="col-form-label"
+                    >Name on the Account</label>
+                    <input
+                        id="o_zift_account_name"
+                        class="form-control"
+                        type="text"
+                        required=""
+                    />
+                    <!-- Not a courtesy field. Zift's own guidance is that a
+                         name not matching the account causes ACH returns. -->
+                    <small class="form-text text-muted">
+                        Must match the name your bank has on the account.
+                    </small>
+                </div>
+                <div class="mb-3">
+                    <label
+                        for="o_zift_aba_number"
+                        class="col-form-label"
+                    >Routing Number</label>
+                    <input
+                        id="o_zift_aba_number"
+                        class="form-control"
+                        type="text"
+                        required=""
+                        maxlength="9"
+                    />
+                </div>
+                <div class="mb-3">
+                    <label
+                        for="o_zift_account_number"
+                        class="col-form-label"
+                    >Account Number</label>
+                    <input
+                        id="o_zift_account_number"
+                        class="form-control"
+                        type="text"
+                        required=""
+                        maxlength="17"
+                    />
+                </div>
+                <div class="mb-3">
+                    <label
+                        for="o_zift_account_type"
+                        class="col-form-label"
+                    >Account Type</label>
+                    <select id="o_zift_account_type" class="form-select" required="">
+                        <option value="C">Checking</option>
+                        <option value="S">Savings</option>
+                    </select>
+                </div>
+                <div class="alert alert-info" role="status">
+                    Bank transfers take one to three business days to clear.
+                    Your payment is recorded as pending until it settles.
+                </div>
+            </t>
+        </div>
+    </template>
+</odoo>
