@@ -55,11 +55,11 @@ class UsTaxCalculationLog(models.Model):
     )
     nexus_applied = fields.Boolean()
 
-    state_rate = fields.Float(digits=(5, 4))
-    county_rate = fields.Float(digits=(5, 4))
-    city_rate = fields.Float(digits=(5, 4))
-    district_rate = fields.Float(digits=(5, 4))
-    total_rate = fields.Float(digits=(5, 4))
+    state_rate = fields.Float(digits=(7, 6))
+    county_rate = fields.Float(digits=(7, 6))
+    city_rate = fields.Float(digits=(7, 6))
+    district_rate = fields.Float(digits=(7, 6))
+    total_rate = fields.Float(digits=(7, 6))
 
     taxable_amount = fields.Monetary(currency_field="currency_id")
     tax_amount = fields.Monetary(currency_field="currency_id")

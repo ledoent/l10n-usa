@@ -24,7 +24,7 @@ class UsTaxRule(models.Model):
         help="Is this category taxable in this state?",
     )
     rate_override = fields.Float(
-        digits=(5, 4),
+        digits=(7, 6),
         help="If set, use this rate instead of the standard jurisdiction rate.",
     )
     exemption_reason = fields.Char(

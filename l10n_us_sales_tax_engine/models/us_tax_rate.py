@@ -24,12 +24,12 @@ class UsTaxRate(models.Model):
         "us.tax.product.category",
         help="Leave empty to apply to all categories.",
     )
-    state_rate = fields.Float(digits=(5, 4), default=0.0)
-    county_rate = fields.Float(digits=(5, 4), default=0.0)
-    city_rate = fields.Float(digits=(5, 4), default=0.0)
-    district_rate = fields.Float(digits=(5, 4), default=0.0)
+    state_rate = fields.Float(digits=(7, 6), default=0.0)
+    county_rate = fields.Float(digits=(7, 6), default=0.0)
+    city_rate = fields.Float(digits=(7, 6), default=0.0)
+    district_rate = fields.Float(digits=(7, 6), default=0.0)
     total_rate = fields.Float(
-        digits=(5, 4),
+        digits=(7, 6),
         compute="_compute_total_rate",
         store=True,
         help="Sum of all rate components.",
