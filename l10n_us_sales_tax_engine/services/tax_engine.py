@@ -10,9 +10,9 @@ from ..levels import LABEL_BY_LEVEL, RATE_COMPONENTS
 from ..tools import ORIGIN_BASED_STATES
 from .address_resolver import (
     is_us_address,
-    normalize_zip,
     resolve_invoice_address,
     resolve_shipping_address,
+    split_zip,
 )
 from .cache_manager import CacheManager
 from .provider_base import ProviderError
@@ -95,30 +95,50 @@ class UsTaxEngineService(models.AbstractModel):
         return partner.country_id.code != "US" or partner.state_id.code != state_code
 
     @api.model
-    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
-        """ZIP to rate from: the ship-from for an intrastate sale in an origin-
-        based state, else the customer's ship-to ZIP.
+    def _sourcing_address(self, res_model, res_id, company_id, address, state_code):
+        """Address to rate from: the ship-from for an intrastate sale in an
+        origin-based state, else the customer's ship-to.
 
         The ship-from partner is resolved via ``_get_origin_partner`` (the
         company address by default; ``l10n_us_sales_tax_stock`` returns the
         shipping warehouse). Interstate sales, destination-based states, and a
-        non-US or blank origin keep the destination ZIP; an origin with no ZIP
-        logs a warning and falls back to destination.
+        non-US or blank origin keep the destination address; an origin with no
+        ZIP logs a warning and falls back to destination.
+
+        ZIP, ZIP+4 and street move together: rating an origin ZIP against the
+        destination's ZIP+4 or house number would resolve a boundary record
+        belonging to neither address.
         """
+        destination = {
+            "zip": address.get("zip", ""),
+            "zip4": address.get("zip4", ""),
+            "street": address.get("street", ""),
+        }
         if state_code not in ORIGIN_BASED_STATES:
-            return zip_code
+            return destination
         origin = self._get_origin_partner(res_model, res_id, company_id)
         if origin.country_id.code != "US" or origin.state_id.code != state_code:
-            return zip_code  # interstate (or non-US origin) → destination
-        origin_zip = normalize_zip(origin.zip or "")
+            return destination  # interstate (or non-US origin) → destination
+        origin_zip, origin_zip4 = split_zip(origin.zip or "")
         if not origin_zip:
             _logger.warning(
                 "US Tax: %s is origin-based but the ship-from has no ZIP; "
                 "rating at the destination ZIP.",
                 state_code,
             )
-            return zip_code
-        return origin_zip
+            return destination
+        return {
+            "zip": origin_zip,
+            "zip4": origin_zip4,
+            "street": (origin.street or "").strip(),
+        }
+
+    @api.model
+    def _sourcing_zip(self, res_model, res_id, company_id, zip_code, state_code):
+        """ZIP part of :meth:`_sourcing_address`."""
+        return self._sourcing_address(
+            res_model, res_id, company_id, {"zip": zip_code}, state_code
+        )["zip"]
 
     @api.model
     def _get_origin_partner(self, res_model, res_id, company_id):
@@ -398,10 +418,10 @@ class UsTaxEngineService(models.AbstractModel):
         cache = CacheManager(self.env, ttl_hours=ttl)
 
         # Step 4b: Sourcing — origin-based states rate an INTRASTATE sale from the
-        # seller's ship-from; everything else keeps the ship-to ZIP. Only the rate
-        # lookup ZIP changes; nexus/exemption stay on the destination.
-        rate_zip = self._sourcing_zip(
-            res_model, res_id, company_id, zip_code, state_code
+        # seller's ship-from; everything else keeps the ship-to address. Only the
+        # rate lookup moves; nexus/exemption stay on the destination.
+        rate_point = self._sourcing_address(
+            res_model, res_id, company_id, address, state_code
         )
 
         # Step 4c: remote-seller single/simplified local rate — a remote
@@ -458,7 +478,9 @@ class UsTaxEngineService(models.AbstractModel):
 
             # Calculate rate for this line
             rate_result = self._get_rate(
-                zip_code=rate_zip,
+                zip_code=rate_point["zip"],
+                zip4=rate_point["zip4"],
+                street=rate_point["street"],
                 state_code=state_code,
                 state_id=state.id if state else False,
                 product_category_code=cat_code,
@@ -538,6 +560,8 @@ class UsTaxEngineService(models.AbstractModel):
         engine_mode,
         fail_policy,
         rate_override=None,
+        zip4="",
+        street="",
     ):
         """Return rate dict from best available source.
 
@@ -558,16 +582,24 @@ class UsTaxEngineService(models.AbstractModel):
 
         payload = {
             "zip": zip_code,
+            "zip4": zip4,
             "state": state_code,
             "city": address.get("city", ""),
+            "street": street,
             "address": address.get("address", ""),
             "date": str(doc_date),
             "product_category": product_category_code,
         }
 
-        # Cache check
+        # Cache check — keyed on the whole rating point, so a ZIP+4 or rooftop
+        # answer is never served to another address in the same 5-digit ZIP.
         cache_hash = cache.build_hash(
-            zip_code, state_code, product_category_code, doc_date
+            zip_code,
+            state_code,
+            product_category_code,
+            doc_date,
+            zip4=zip4,
+            street=street,
         )
         cached = cache.get(cache_hash)
         if cached:

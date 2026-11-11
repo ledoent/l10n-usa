@@ -73,3 +73,33 @@ class TestSourcing(UsTaxBaseTest):
                 ),
                 "77001",
             )
+
+    def test_origin_sourcing_carries_the_origin_zip4_and_street(self):
+        """The whole rating point moves, not just the ZIP.
+
+        Keeping the destination's ZIP+4 or street alongside an origin ZIP would
+        resolve an address-level boundary record belonging to neither party.
+        """
+        self._set_origin(self.tx, "75001-0220")
+        self.company.partner_id.street = "12 Commerce St"
+        destination = {
+            "zip": "77001",
+            "zip4": "4455",
+            "street": "900 Harris Ave",
+        }
+        self.assertEqual(
+            self.service._sourcing_address(
+                False, False, self.company.id, destination, "TX"
+            ),
+            {"zip": "75001", "zip4": "0220", "street": "12 Commerce St"},
+        )
+
+    def test_destination_sourcing_keeps_the_buyer_zip4_and_street(self):
+        self._set_origin(self.fl, "33102")
+        destination = {"zip": "33101", "zip4": "4455", "street": "900 Biscayne Blvd"}
+        self.assertEqual(
+            self.service._sourcing_address(
+                False, False, self.company.id, destination, "FL"
+            ),
+            destination,
+        )

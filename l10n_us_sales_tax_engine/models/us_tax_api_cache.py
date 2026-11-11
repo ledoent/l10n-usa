@@ -37,9 +37,23 @@ class UsTaxApiCache(models.Model):
     ]
 
     @api.model
-    def build_hash(self, zip_code, state_code, product_category_code, date_month):
-        """Build a deterministic cache key."""
+    def build_hash(
+        self,
+        zip_code,
+        state_code,
+        product_category_code,
+        date_month,
+        zip4="",
+        street="",
+    ):
+        """Build a deterministic cache key.
+
+        The ZIP+4 and street are appended only when supplied, so a 5-digit
+        lookup keeps the key it had before address-level rating existed.
+        """
         raw = f"{zip_code}|{state_code}|{product_category_code}|{date_month}"
+        if zip4 or street:
+            raw = f"{raw}|{zip4}|{(street or '').strip().upper()}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     @api.model
