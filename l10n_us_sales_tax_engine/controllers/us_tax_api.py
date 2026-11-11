@@ -14,14 +14,15 @@ class UsTaxController(http.Controller):
         """Calculate US sales tax for given parameters.
 
         Body:
-            zip (str): 5-digit ZIP code
+            zip (str): 5-digit or ZIP+4 code
             state (str): 2-letter state code
             amount (float): taxable amount
+            street (str): street line, for address-level rating (optional)
             product_category (str): TANGIBLE | SERVICE | FOOD | ...
             date (str): YYYY-MM-DD (optional, defaults to today)
         """
         try:
-            from ..services.address_resolver import normalize_zip  # noqa: PLC0415
+            from ..services.address_resolver import split_zip  # noqa: PLC0415
             from ..services.cache_manager import CacheManager  # noqa: PLC0415
 
             body = request.get_json_data() or {}
@@ -31,6 +32,7 @@ class UsTaxController(http.Controller):
             category = body.get(
                 "product_category", kwargs.get("product_category", "TANGIBLE")
             )
+            street = body.get("street", kwargs.get("street", "")).strip()
             calc_date = (
                 body.get("date") or kwargs.get("date") or str(fields.Date.today())
             )
@@ -38,14 +40,18 @@ class UsTaxController(http.Controller):
             if not zip_code:
                 return {"error": "zip is required"}
 
+            zip5, zip4 = split_zip(zip_code)
+
             ICP = request.env["ir.config_parameter"].sudo()
             engine = request.env["us.tax.engine.service"]
             address = {
-                "zip": normalize_zip(zip_code),
+                "zip": zip5,
+                "zip4": zip4,
                 "state": state_code,
                 "city": body.get("city", kwargs.get("city", "")),
+                "street": street,
                 "country_code": "US",
-                "address": f"{zip_code} {state_code}",
+                "address": f"{street} {zip_code} {state_code}".strip(),
             }
             ttl = int(ICP.get_param("l10n_us_tax.cache_ttl_hours", "720"))
             cache = CacheManager(request.env, ttl_hours=ttl)
@@ -53,7 +59,9 @@ class UsTaxController(http.Controller):
             fail = ICP.get_param("l10n_us_tax.fail_policy", "warn")
 
             rates = engine._get_rate(
-                zip_code=normalize_zip(zip_code),
+                zip_code=zip5,
+                zip4=zip4,
+                street=street,
                 state_code=state_code,
                 state_id=False,
                 product_category_code=category,

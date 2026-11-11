@@ -2,25 +2,40 @@
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 import re
 
+_HOUSE_NUMBER = re.compile(r"\s*(\d+)")
+
+
+def split_zip(zip_code: str) -> tuple:
+    """Split any US ZIP input into its 5-digit and +4 parts."""
+    digits = re.sub(r"[^0-9]", "", str(zip_code or ""))
+    if len(digits) < 5:
+        return "", ""
+    return digits[:5], digits[5:9] if len(digits) >= 9 else ""
+
 
 def normalize_zip(zip_code: str) -> str:
     """Extract and validate 5-digit US ZIP from any input."""
-    if not zip_code:
-        return ""
-    cleaned = re.sub(r"[^0-9]", "", str(zip_code).strip())
-    return cleaned[:5] if len(cleaned) >= 5 else ""
+    return split_zip(zip_code)[0]
+
+
+def house_number(street: str) -> str:
+    """Return the leading house number of a street line, or an empty string."""
+    match = _HOUSE_NUMBER.match(street or "")
+    return match.group(1) if match else ""
 
 
 def _partner_to_address(partner: object) -> dict:
     """Extract address dict from a res.partner record."""
-    zip_code = normalize_zip(partner.zip or "")
+    zip_code, zip4 = split_zip(partner.zip or "")
     state_code = partner.state_id.code if partner.state_id else ""
     country_code = partner.country_id.code if partner.country_id else ""
     return {
         "zip": zip_code,
+        "zip4": zip4,
         "state": state_code,
         "city": (partner.city or "").strip().upper(),
         "county": "",
+        "street": (partner.street or "").strip(),
         "address": f'{partner.street or ""}, {partner.city or ""}, '
         f"{state_code} {zip_code}",
         "country_code": country_code,

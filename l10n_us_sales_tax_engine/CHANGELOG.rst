@@ -1,6 +1,18 @@
 Changelog
 =========
 
+18.0.1.3.0
+----------
+* Rate fractions are stored at six decimals instead of four, so a published
+  rate finer than 0.01% survives the write (Minnesota's 6.875% state rate was
+  rounded to 6.88%)
+* The address dict, sourcing step, provider payload and rate cache key now
+  carry the ZIP+4 and street, so providers that resolve below the 5-digit ZIP
+  are reachable from a document calculation
+* ``_sourcing_address`` replaces ``_sourcing_zip`` as the sourcing hook; the
+  ZIP, ZIP+4 and street of the rating point move together
+* ``/api/v1/us_tax/calculate`` accepts a ZIP+4 and an optional ``street``
+
 18.0.1.0.12 (2026-06-26)
 ------------------------
 * Provider-agnostic architecture: providers now self-register via a registry

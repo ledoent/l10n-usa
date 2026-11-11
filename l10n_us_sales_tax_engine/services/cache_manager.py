@@ -62,9 +62,20 @@ class CacheManager:
             _logger.warning("Cache write failed: %s", exc)
 
     def build_hash(
-        self, zip_code: str, state_code: str, product_category_code: str, date
+        self,
+        zip_code: str,
+        state_code: str,
+        product_category_code: str,
+        date,
+        zip4: str = "",
+        street: str = "",
     ) -> str:
         date_month = str(date)[:7] if date else "nodate"  # 'YYYY-MM'
         return self.Cache.build_hash(
-            zip_code, state_code, product_category_code, date_month
+            zip_code,
+            state_code,
+            product_category_code,
+            date_month,
+            zip4=zip4,
+            street=street,
         )

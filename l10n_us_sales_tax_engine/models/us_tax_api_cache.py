@@ -15,11 +15,11 @@ class UsTaxApiCache(models.Model):
     zip = fields.Char(size=5, index=True)
     state_id = fields.Many2one("res.country.state", index=True)
     provider_id = fields.Many2one("us.tax.provider", ondelete="set null")
-    total_rate = fields.Float(digits=(5, 4))
-    state_rate = fields.Float(digits=(5, 4))
-    county_rate = fields.Float(digits=(5, 4))
-    city_rate = fields.Float(digits=(5, 4))
-    district_rate = fields.Float(digits=(5, 4))
+    total_rate = fields.Float(digits=(7, 6))
+    state_rate = fields.Float(digits=(7, 6))
+    county_rate = fields.Float(digits=(7, 6))
+    city_rate = fields.Float(digits=(7, 6))
+    district_rate = fields.Float(digits=(7, 6))
     source_date = fields.Date(help="Rate effective date reported by provider.")
     cached_at = fields.Datetime(default=fields.Datetime.now)
     expires_at = fields.Datetime(index=True)
@@ -37,9 +37,23 @@ class UsTaxApiCache(models.Model):
     ]
 
     @api.model
-    def build_hash(self, zip_code, state_code, product_category_code, date_month):
-        """Build a deterministic cache key."""
+    def build_hash(
+        self,
+        zip_code,
+        state_code,
+        product_category_code,
+        date_month,
+        zip4="",
+        street="",
+    ):
+        """Build a deterministic cache key.
+
+        The ZIP+4 and street are appended only when supplied, so a 5-digit
+        lookup keeps the key it had before address-level rating existed.
+        """
         raw = f"{zip_code}|{state_code}|{product_category_code}|{date_month}"
+        if zip4 or street:
+            raw = f"{raw}|{zip4}|{(street or '').strip().upper()}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     @api.model
