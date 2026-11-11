@@ -1,5 +1,9 @@
 # Copyright 2026 Ledo <https://ledoweb.com>
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+from unittest.mock import patch
+
+from stdnum.us import ssn
+
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
@@ -13,15 +17,34 @@ class TestLegalIDNumber(TransactionCase):
         cls.Partner = cls.env["res.partner"]
 
     def test_valid_ssn_accepted(self):
-        """A valid SSN (NNN-NN-NNNN with non-blacklisted area) saves cleanly.
-
-        stdnum.us.ssn rejects 666-XX-XXXX, 9XX-XX-XXXX, XXX-00-XXXX, etc.
-        Use 123-45-6789 which passes the format check.
-        """
+        """A valid SSN saves cleanly."""
         partner = self.Partner.create(
             {"name": "Jane Doe", "legal_id_number": "123-45-6789"}
         )
         self.assertEqual(partner.legal_id_number, "123-45-6789")
+
+    def test_valid_ein_accepted(self):
+        """A valid EIN (NN-NNNNNNN) saves cleanly, hyphenated or bare."""
+        for number in ("12-3456789", "123456789"):
+            partner = self.Partner.create(
+                {"name": f"Acme {number}", "legal_id_number": number}
+            )
+            self.assertEqual(partner.legal_id_number, number)
+
+    def test_misplaced_ein_separator_rejected(self):
+        """1-23456789 is nine digits but is not an EIN, SSN or Canadian BN."""
+        with self.assertRaises(UserError):
+            self.Partner.create({"name": "Bad Sep Co", "legal_id_number": "1-23456789"})
+
+    def test_multiple_partners_created_at_once(self):
+        """The constraint runs over a recordset, not a single record."""
+        partners = self.Partner.create(
+            [
+                {"name": "Acme Inc", "legal_id_number": "12-3456789"},
+                {"name": "Jane Doe", "legal_id_number": "123-45-6789"},
+            ]
+        )
+        self.assertEqual(len(partners), 2)
 
     def test_invalid_legal_id_raises(self):
         """A garbage string fails EIN, SSN, and CBN validation → UserError."""
@@ -37,6 +60,14 @@ class TestLegalIDNumber(TransactionCase):
             {"name": "Maple Co Ltd", "legal_id_number": "123456782"}
         )
         self.assertEqual(partner.legal_id_number, "123456782")
+
+    def test_non_validation_errors_are_not_swallowed(self):
+        """An environment failure surfaces instead of reading as a bad number."""
+        with patch.object(ssn, "validate", side_effect=OSError("boom")):
+            with self.assertRaises(OSError):
+                self.Partner.create(
+                    {"name": "Env Broken", "legal_id_number": "123-45-6789"}
+                )
 
     def test_blank_legal_id_allowed(self):
         """Legal ID is optional — partners without one save cleanly."""
