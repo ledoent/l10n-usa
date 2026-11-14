@@ -408,15 +408,16 @@ Only for development or testing purpose, do not use in production.
 <li><a class="reference internal" href="#configuration" id="toc-entry-1">Configuration</a><ul>
 <li><a class="reference internal" href="#pci-scope-read-before-enabling-this-in-production" id="toc-entry-2">PCI scope — read before enabling this in production</a></li>
 <li><a class="reference internal" href="#ach-behaves-differently-from-card-by-design" id="toc-entry-3">ACH behaves differently from card, by design</a></li>
+<li><a class="reference internal" href="#optional-payer-processing-fee-pass-through" id="toc-entry-4">Optional payer processing-fee pass-through</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#usage" id="toc-entry-4">Usage</a></li>
-<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-5">Known issues / Roadmap</a></li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-6">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-7">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-8">Authors</a></li>
-<li><a class="reference internal" href="#contributors" id="toc-entry-9">Contributors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-10">Maintainers</a></li>
+<li><a class="reference internal" href="#usage" id="toc-entry-5">Usage</a></li>
+<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-6">Known issues / Roadmap</a></li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-7">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-8">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-9">Authors</a></li>
+<li><a class="reference internal" href="#contributors" id="toc-entry-10">Contributors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-11">Maintainers</a></li>
 </ul>
 </li>
 </ul>
@@ -430,10 +431,11 @@ and fill in the three credentials Zift issues for the merchant account:</p>
 <li><strong>Password</strong></li>
 <li><strong>Account ID</strong></li>
 </ul>
-<p>All three travel in the body of every request. Leave <em>State</em> on <strong>Test</strong>
-until they have been proven against the sandbox; the module points at
-<tt class="docutils literal"><span class="pre">sandbox-secure.zift.io</span></tt> in test and <tt class="docutils literal">secure.zift.io</tt> when the
-provider is enabled.</p>
+<p>All three travel in the body of every request. Leave <strong>Live Mode</strong>
+disabled until they have been proven against the sandbox. Odoo 20 uses
+<tt class="docutils literal">is_live</tt>, not the older provider State selector: sandbox traffic goes
+to <tt class="docutils literal"><span class="pre">sandbox-secure.zift.io</span></tt>, and live traffic goes to
+<tt class="docutils literal">secure.zift.io</tt>.</p>
 <p>Zift settles in <strong>USD</strong> only, and ACH Direct Debit is restricted to the
 United States and Puerto Rico.</p>
 <div class="section" id="pci-scope-read-before-enabling-this-in-production">
@@ -471,9 +473,49 @@ callback is not published, so this module ships no notification endpoint
 against the bank by a person. Plan for that before enabling ACH, or
 enable card only.</p>
 </div>
+<div class="section" id="optional-payer-processing-fee-pass-through">
+<h3><a class="toc-backref" href="#toc-entry-4">Optional payer processing-fee pass-through</a></h3>
+<p>The setting <strong>Pass gateway processing fees to the payer</strong> is disabled by
+default. Enable it only for a Zift merchant profile configured to
+collect and retain its convenience fee separately from the merchant’s
+payment principal. This implementation adds no merchant-defined markup
+or fee income.</p>
+<p>For interactive card and ACH payments, including saved methods, Odoo
+requests <tt class="docutils literal"><span class="pre">requestType=convenience-fee</span></tt> using the tokenized instrument
+and principal in cents. The payer sees principal, fee and total and must
+choose <strong>Accept fee and pay</strong>. Cancel sends no financial request. Quotes
+expire after ten minutes and are bound to the payer, instrument,
+merchant profile, currency and amount. Changed inputs require a new
+quote. Validation transactions do not incur fees. Off-session charging
+cannot bypass acceptance; fee mode requires automatic capture. Keep fee
+mode disabled for charge-on-ship/manual-capture profiles.</p>
+<p>The sale sends principal as <tt class="docutils literal">amount</tt> and the accepted fee separately
+as <tt class="docutils literal">feeAmount</tt>. Transaction and invoice amounts stay at principal; the
+gateway’s retained fee does not become merchant revenue or tenant
+credit. This requires <tt class="docutils literal">account_payment</tt> so native invoice settlement
+uses the original principal. Accepted amounts and time are retained on
+the transaction and payment status. ACH acceptance remains pending; fee
+acceptance is not settlement confirmation.</p>
+<p>Odoo refunds send a positive principal amount with <tt class="docutils literal">feeAmount=0</tt>.
+Gateway fee refunds require separate handling under the actual merchant
+policy; this is not a statement that fees are legally nonrefundable. A
+timeout, incomplete response or principal/fee/instrument mismatch leaves
+an error requiring gateway inquiry; Odoo will not automatically retry a
+consumed quote. A database failure around an external request still
+requires reconciliation, not blind resubmission.</p>
+<p>Protocol basis: Zift’s <a class="reference external" href="https://docs.zift.io/processing-api/realtime/notes/integration-notes-provider-response-data">Convenience Fee integration
+notes</a>
+and <a class="reference external" href="https://docs.zift.io/components/223">fee policy fields</a>. This is
+the additional convenience-fee model, distinct from a service fee
+withheld out of a remitted total. Merchant-profile eligibility, ACH/card
+permissions, exact response amount semantics, fee refunds and settlement
+must be verified with issued sandbox credentials before enabling this
+option in production. All local acceptance traffic uses synthetic mocked
+responses.</p>
+</div>
 </div>
 <div class="section" id="usage">
-<h2><a class="toc-backref" href="#toc-entry-4">Usage</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-5">Usage</a></h2>
 <p>Once the provider is enabled, Zift appears as a payment option wherever
 Odoo offers one — the customer portal’s <em>Pay Now</em> on an invoice, the
 eCommerce checkout, and a payment link.</p>
@@ -516,7 +558,7 @@ Zift’s <tt class="docutils literal">credit</tt> operation. Cards additionally 
 of a prior authorisation, and voiding one before settlement.</p>
 </div>
 <div class="section" id="known-issues-roadmap">
-<h2><a class="toc-backref" href="#toc-entry-5">Known issues / Roadmap</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-6">Known issues / Roadmap</a></h2>
 <p>These are gaps in Zift’s published documentation, not decisions deferred
 for convenience. Each one is a thing this module declines to invent.</p>
 <ul class="simple">
@@ -552,10 +594,17 @@ mocked responses. Nothing has been proven against Zift because no
 sandbox credential has been issued; the gateway rejects on credentials
 and nothing else, so the whole integration is provable the day one
 arrives.</li>
+<li><strong>Fee-profile acceptance is pending.</strong> Optional fee pass-through now
+has synthetic acceptance tests for explicit payer consent,
+principal-only invoice settlement, pending ACH, refunds and uncertain
+outcomes. Issued sandbox credentials and the intended merchant profile
+are still required to verify actual quote/sale/refund responses.
+Custom merchant markup, fee-mode manual capture and off-session fee
+charging are not implemented.</li>
 </ul>
 </div>
 <div class="section" id="bug-tracker">
-<h2><a class="toc-backref" href="#toc-entry-6">Bug Tracker</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-7">Bug Tracker</a></h2>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/OCA/l10n-usa/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -563,15 +612,15 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h2><a class="toc-backref" href="#toc-entry-7">Credits</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-8">Credits</a></h2>
 <div class="section" id="authors">
-<h3><a class="toc-backref" href="#toc-entry-8">Authors</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-9">Authors</a></h3>
 <ul class="simple">
 <li>Ledo Enterprises</li>
 </ul>
 </div>
 <div class="section" id="contributors">
-<h3><a class="toc-backref" href="#toc-entry-9">Contributors</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-10">Contributors</a></h3>
 <ul class="simple">
 <li>Ledo Enterprises <a class="reference external" href="https://github.com/ledoent">https://github.com/ledoent</a><ul>
 <li>Don Kendall <a class="reference external" href="mailto:dkendall&#64;ledoweb.com">dkendall&#64;ledoweb.com</a></li>
@@ -580,7 +629,7 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h3><a class="toc-backref" href="#toc-entry-10">Maintainers</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-11">Maintainers</a></h3>
 <p>This module is maintained by the OCA.</p>
 <a class="reference external image-reference" href="https://odoo-community.org">
 <img alt="Odoo Community Association" src="https://odoo-community.org/logo.png" />
