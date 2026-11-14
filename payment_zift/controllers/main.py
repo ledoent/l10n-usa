@@ -32,7 +32,15 @@ class ZiftController(http.Controller):
     @http.route(
         const.PAYMENT_REQUEST_ROUTE, type="jsonrpc", auth="public", methods=["POST"]
     )
-    def zift_payment(self, reference, partner_id, access_token, zift_data):
+    def zift_payment(
+        self,
+        reference,
+        partner_id,
+        access_token,
+        zift_data=None,
+        fee_quote_id=None,
+        fee_accepted=False,
+    ):
         """Make a payment request with a token minted in the browser.
 
         `zift_data` carries only what proxynization hands back — a token, the
@@ -55,6 +63,19 @@ class ZiftController(http.Controller):
                 self.env._("No transaction found matching the reference.")
             )
 
+        if tx_sudo.provider_code != "zift" or tx_sudo.partner_id.id != int(partner_id):
+            raise ValidationError(
+                self.env._("This payment does not belong to this payer and provider.")
+            )
+        if tx_sudo.provider_id.zift_pass_fees and tx_sudo.operation != "validation":
+            return tx_sudo._zift_send_quoted_payment(
+                zift_data, fee_quote_id, fee_accepted
+            )
+        if fee_quote_id:
+            raise ValidationError(
+                self.env._("Fee settings changed; review this payment again.")
+            )
+        zift_data = zift_data or {}
         account_type = zift_data.get("accountType") or const.ACCOUNT_TYPE_CARD
         is_ach = account_type in const.ACH_ACCOUNT_TYPES
 
@@ -96,3 +117,25 @@ class ZiftController(http.Controller):
                 response_content = tx_sudo._zift_make_request(request_type, params)
 
         tx_sudo._record({"response": response_content})
+
+    @http.route(
+        "/payment/zift/fee_quote", type="jsonrpc", auth="public", methods=["POST"]
+    )
+    def zift_fee_quote(self, reference, partner_id, access_token, zift_data=None):
+        if not payment_utils.check_access_token(access_token, reference, partner_id):
+            raise ValidationError(self.env._("Received tampered fee quote request."))
+        transaction = (
+            self.env["payment.transaction"]
+            .sudo()
+            .search(
+                [
+                    ("reference", "=", reference),
+                    ("partner_id", "=", int(partner_id)),
+                    ("provider_code", "=", "zift"),
+                ],
+                limit=1,
+            )
+        )
+        if not transaction:
+            raise ValidationError(self.env._("No matching Zift transaction was found."))
+        return transaction._zift_quote_fee(zift_data)
