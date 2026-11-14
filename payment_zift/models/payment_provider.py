@@ -4,7 +4,8 @@
 import json
 from urllib.parse import parse_qsl
 
-from odoo import fields, models
+from odoo import api, fields, models
+from odoo.exceptions import ValidationError
 
 from odoo.addons.payment.logging import get_payment_logger
 
@@ -38,7 +39,24 @@ class PaymentProvider(models.Model):
         groups="base.group_system",
     )
 
+    zift_pass_fees = fields.Boolean(
+        string="Pass gateway processing fees to the payer",
+        help="Quote the gateway's convenience fee and obtain acceptance "
+        "before charging. "
+        "Use a merchant profile where Zift collects and retains that fee separately "
+        "from the principal. This does not add a merchant markup.",
+    )
+
     # === COMPUTE METHODS === #
+
+    @api.constrains("zift_pass_fees", "capture_manually", "code")
+    def _check_zift_fee_capture(self):
+        if any(
+            p.code == "zift" and p.zift_pass_fees and p.capture_manually for p in self
+        ):
+            raise ValidationError(
+                self.env._("Zift fee pass-through requires automatic capture.")
+            )
 
     def _compute_feature_support_fields(self):
         """Override of `payment` to enable additional features."""

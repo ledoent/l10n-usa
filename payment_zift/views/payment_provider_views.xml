@@ -28,6 +28,7 @@
                     invisible="code != 'zift'"
                     required="is_live"
                 />
+                <field name="zift_pass_fees" invisible="code != 'zift'" />
             </group>
         </field>
     </record>

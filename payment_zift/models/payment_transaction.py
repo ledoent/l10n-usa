@@ -1,7 +1,14 @@
 # Copyright 2026 Ledo Enterprises
 # License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl).
 
-from odoo import api, models
+import hashlib
+import json
+import re
+import uuid
+from datetime import timedelta
+
+from odoo import api, fields, models
+from odoo.exceptions import AccessError, ValidationError
 
 from odoo.addons.payment import utils as payment_utils
 from odoo.addons.payment.logging import get_payment_logger
@@ -9,6 +16,17 @@ from odoo.addons.payment.logging import get_payment_logger
 from .. import const
 
 _logger = get_payment_logger(__name__, const.SENSITIVE_KEYS)
+
+_FEE_TOKEN = object()
+_OUTPUTS = {
+    "zift_fee_principal",
+    "zift_fee_amount",
+    "zift_fee_quote_id",
+    "zift_fee_expires_at",
+    "zift_fee_fingerprint",
+    "zift_fee_accepted_at",
+    "zift_fee_processed",
+}
 
 
 class PaymentTransaction(models.Model):
@@ -28,7 +46,9 @@ class PaymentTransaction(models.Model):
         return {
             "access_token": payment_utils.generate_access_token(
                 processing_values["reference"], processing_values["partner_id"]
-            )
+            ),
+            "zift_fee_enabled": self.provider_id.zift_pass_fees
+            and self.operation != "validation",
         }
 
     def _zift_make_request(self, request_type, params):
@@ -59,6 +79,16 @@ class PaymentTransaction(models.Model):
         if self.provider_code != "zift":
             return super()._send_payment_request()
 
+        if self.provider_id.zift_pass_fees:
+            if self.operation == "online_token":
+                return  # The payment form obtains an accepted quote before charging.
+            raise ValidationError(
+                self.env._(
+                    "This payment requires the payer to accept a current "
+                    "processing-fee quote."
+                )
+            )
+
         token = self.token_id
         account_type = token.zift_account_type or const.ACCOUNT_TYPE_CARD
         params = {
@@ -84,8 +114,10 @@ class PaymentTransaction(models.Model):
         source_tx = self.source_transaction_id
         params = {
             "transactionId": source_tx.provider_reference,
-            "amount": self._zift_get_amount_in_cents(),
+            "amount": abs(self._zift_get_amount_in_cents()),
         }
+        if source_tx.zift_fee_processed:
+            params["feeAmount"] = 0
         response_content = self._zift_make_request("credit", params)
         self._record({"response": response_content})
 
@@ -245,3 +277,231 @@ class PaymentTransaction(models.Model):
             "zift_account_accessory": response.get("accountAccessory"),
             "zift_holder_name": response.get("holderName"),
         }
+
+    zift_fee_principal = fields.Monetary(readonly=True, copy=False)
+    zift_fee_amount = fields.Monetary(readonly=True, copy=False)
+    zift_fee_quote_id = fields.Char(
+        readonly=True, copy=False, groups="base.group_system"
+    )
+    zift_fee_expires_at = fields.Datetime(readonly=True, copy=False)
+    zift_fee_fingerprint = fields.Char(
+        readonly=True, copy=False, groups="base.group_system"
+    )
+    zift_fee_accepted_at = fields.Datetime(readonly=True, copy=False)
+    zift_fee_processed = fields.Boolean(readonly=True, copy=False)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        if self.env.context.get("zift_fee_token") is not _FEE_TOKEN and (
+            any(_OUTPUTS & values.keys() for values in vals_list)
+            or any("default_" + name in self.env.context for name in _OUTPUTS)
+        ):
+            raise AccessError(
+                self.env._("Use the Zift fee quote and payment workflow.")
+            )
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if {"amount", "currency_id", "provider_id", "partner_id"} & vals.keys() and any(
+            tx.zift_fee_processed for tx in self
+        ):
+            raise ValidationError(
+                self.env._("Keep the accepted payment inputs for reconciliation.")
+            )
+        if (
+            _OUTPUTS & vals.keys()
+            and self.env.context.get("zift_fee_token") is not _FEE_TOKEN
+        ):
+            raise AccessError(
+                self.env._("Fee quotes and acceptance are payment evidence.")
+            )
+        return super().write(vals)
+
+    def _zift_instrument(self, data=None):
+        self.ensure_one()
+        data = data or {}
+        if self.token_id:
+            token = self.token_id
+            if (
+                not token.active
+                or token.provider_id != self.provider_id
+                or token.partner_id.commercial_partner_id
+                != self.partner_id.commercial_partner_id
+            ):
+                raise ValidationError(
+                    self.env._(
+                        "Use an active payment method belonging to this payer "
+                        "and provider."
+                    )
+                )
+            data = {
+                "token": token.provider_ref,
+                "accountType": token.zift_account_type,
+                "accountAccessory": token.zift_account_accessory,
+                "holderName": token.zift_holder_name,
+            }
+        account_type = data.get("accountType") or const.ACCOUNT_TYPE_CARD
+        if (
+            account_type not in (const.ACCOUNT_TYPE_CARD, *const.ACH_ACCOUNT_TYPES)
+            or not isinstance(data.get("token"), str)
+            or not data["token"]
+            or not data.get("accountAccessory")
+        ):
+            raise ValidationError(
+                self.env._("Provide a tokenized card or bank account.")
+            )
+        return {
+            "token": data["token"],
+            "accountType": account_type,
+            "accountAccessory": data["accountAccessory"],
+            "holderName": data.get("holderName") or "",
+            "holderType": const.HOLDER_TYPE_BUSINESS,
+        }
+
+    def _zift_fee_fingerprint(self, instrument):
+        values = {
+            "instrument": instrument,
+            "provider": self.provider_id.id,
+            "company": self.company_id.id,
+            "partner": self.partner_id.id,
+            "merchant": self.provider_id.sudo().zift_account_id,
+            "is_live": self.provider_id.is_live,
+            "is_published": self.provider_id.is_published,
+            "manual_capture": self.provider_id.capture_manually,
+            "currency": self.currency_id.id,
+            "amount": self._zift_get_amount_in_cents(),
+            "operation": self.operation,
+            "reference": self.reference,
+        }
+        return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+
+    def _zift_check_fee_draft(self):
+        self.ensure_one()
+        self.lock_for_update()
+        self.invalidate_recordset()
+        if (
+            self.provider_code != "zift"
+            or self.state != "draft"
+            or self.operation == "validation"
+            or self.amount <= 0
+            or self.currency_id.name != "USD"
+            or self.zift_fee_processed
+            or self.provider_id.capture_manually
+        ):
+            raise ValidationError(
+                self.env._(
+                    "This transaction cannot receive a new fee or payment request."
+                )
+            )
+
+    def _zift_quote_fee(self, data=None):
+        self._zift_check_fee_draft()
+        if not self.provider_id.zift_pass_fees:
+            raise ValidationError(
+                self.env._("Fee pass-through is not enabled for this provider.")
+            )
+        instrument = self._zift_instrument(data)
+        response = self._zift_make_request(
+            "convenience-fee",
+            {
+                **instrument,
+                "amount": self._zift_get_amount_in_cents(),
+            },
+        )
+        fee = response.get("feeAmount")
+        if (
+            response.get("responseType") != "convenience-fee"
+            or response.get("responseCode") != "A01"
+            or not re.fullmatch(r"[0-9]+", str(fee))
+        ):
+            raise ValidationError(
+                self.env._(
+                    "Zift did not return a valid processing-fee quote. "
+                    "No charge was made."
+                )
+            )
+        quote_id = uuid.uuid4().hex
+        fee_cents = int(fee)
+        if fee_cents > 999999999:
+            raise ValidationError(
+                self.env._("The processing-fee quote is outside the supported range.")
+            )
+        self.with_context(zift_fee_token=_FEE_TOKEN, payment_safe_write=True).write(
+            {
+                "zift_fee_principal": self.amount,
+                "zift_fee_amount": fee_cents / 100,
+                "zift_fee_quote_id": quote_id,
+                "zift_fee_expires_at": fields.Datetime.now() + timedelta(minutes=10),
+                "zift_fee_fingerprint": self._zift_fee_fingerprint(instrument),
+                "zift_fee_accepted_at": False,
+            }
+        )
+        principal = self._zift_get_amount_in_cents()
+        return {
+            "quote_id": quote_id,
+            "principal": principal / 100,
+            "fee": fee_cents / 100,
+            "total": (principal + fee_cents) / 100,
+            "currency": self.currency_id.name,
+        }
+
+    def _zift_send_quoted_payment(self, data=None, quote_id=None, accepted=False):
+        self._zift_check_fee_draft()
+        instrument = self._zift_instrument(data)
+        if (
+            not self.provider_id.zift_pass_fees
+            or accepted is not True
+            or not quote_id
+            or quote_id != self.zift_fee_quote_id
+            or not self.zift_fee_expires_at
+            or self.zift_fee_expires_at < fields.Datetime.now()
+            or self.zift_fee_fingerprint != self._zift_fee_fingerprint(instrument)
+        ):
+            raise ValidationError(
+                self.env._(
+                    "Review and accept a current fee quote for this "
+                    "payment method and amount."
+                )
+            )
+        self.with_context(zift_fee_token=_FEE_TOKEN, payment_safe_write=True).write(
+            {
+                "zift_fee_accepted_at": fields.Datetime.now(),
+                "zift_fee_processed": True,
+            }
+        )
+        params = {
+            **instrument,
+            "amount": self._zift_get_amount_in_cents(),
+            "feeAmount": round(self.zift_fee_amount * 100),
+            "orderCode": self.reference,
+        }
+        try:
+            response = self._zift_make_request("sale", params)
+            if response.get("responseType") != const.EXCEPTION_RESPONSE_TYPE and (
+                response.get("responseType") != "sale"
+                or response.get("responseCode") != "A01"
+                or response.get("accountType") != instrument["accountType"]
+                or str(response.get("feeAmount")) != str(params["feeAmount"])
+                or str(response.get("amount")) != str(params["amount"])
+            ):
+                if response.get("transactionId"):
+                    self.with_context(payment_safe_write=True).write(
+                        {"provider_reference": response["transactionId"]}
+                    )
+                self.with_context(payment_safe_write=True)._set_error(
+                    self.env._(
+                        "The gateway did not confirm the quoted principal and fee. "
+                        "Verify the transaction with Zift before retrying."
+                    )
+                )
+            else:
+                self._record({"response": response})
+        except ValidationError:
+            # Return normally so the consumed quote and uncertain outcome persist.
+            self.with_context(payment_safe_write=True)._set_error(
+                self.env._(
+                    "The gateway outcome could not be confirmed. Verify with "
+                    "Zift before creating another payment."
+                )
+            )
+        return {"state": self.state}

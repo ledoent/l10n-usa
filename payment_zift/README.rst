@@ -76,10 +76,11 @@ and fill in the three credentials Zift issues for the merchant account:
 - **Password**
 - **Account ID**
 
-All three travel in the body of every request. Leave *State* on **Test**
-until they have been proven against the sandbox; the module points at
-``sandbox-secure.zift.io`` in test and ``secure.zift.io`` when the
-provider is enabled.
+All three travel in the body of every request. Leave **Live Mode**
+disabled until they have been proven against the sandbox. Odoo 20 uses
+``is_live``, not the older provider State selector: sandbox traffic goes
+to ``sandbox-secure.zift.io``, and live traffic goes to
+``secure.zift.io``.
 
 Zift settles in **USD** only, and ACH Direct Debit is restricted to the
 United States and Puerto Rico.
@@ -122,6 +123,51 @@ callback is not published, so this module ships no notification endpoint
 (see ROADMAP). Until that is answered, ACH payments must be confirmed
 against the bank by a person. Plan for that before enabling ACH, or
 enable card only.
+
+Optional payer processing-fee pass-through
+------------------------------------------
+
+The setting **Pass gateway processing fees to the payer** is disabled by
+default. Enable it only for a Zift merchant profile configured to
+collect and retain its convenience fee separately from the merchant's
+payment principal. This implementation adds no merchant-defined markup
+or fee income.
+
+For interactive card and ACH payments, including saved methods, Odoo
+requests ``requestType=convenience-fee`` using the tokenized instrument
+and principal in cents. The payer sees principal, fee and total and must
+choose **Accept fee and pay**. Cancel sends no financial request. Quotes
+expire after ten minutes and are bound to the payer, instrument,
+merchant profile, currency and amount. Changed inputs require a new
+quote. Validation transactions do not incur fees. Off-session charging
+cannot bypass acceptance; fee mode requires automatic capture. Keep fee
+mode disabled for charge-on-ship/manual-capture profiles.
+
+The sale sends principal as ``amount`` and the accepted fee separately
+as ``feeAmount``. Transaction and invoice amounts stay at principal; the
+gateway's retained fee does not become merchant revenue or tenant
+credit. This requires ``account_payment`` so native invoice settlement
+uses the original principal. Accepted amounts and time are retained on
+the transaction and payment status. ACH acceptance remains pending; fee
+acceptance is not settlement confirmation.
+
+Odoo refunds send a positive principal amount with ``feeAmount=0``.
+Gateway fee refunds require separate handling under the actual merchant
+policy; this is not a statement that fees are legally nonrefundable. A
+timeout, incomplete response or principal/fee/instrument mismatch leaves
+an error requiring gateway inquiry; Odoo will not automatically retry a
+consumed quote. A database failure around an external request still
+requires reconciliation, not blind resubmission.
+
+Protocol basis: Zift's `Convenience Fee integration
+notes <https://docs.zift.io/processing-api/realtime/notes/integration-notes-provider-response-data>`__
+and `fee policy fields <https://docs.zift.io/components/223>`__. This is
+the additional convenience-fee model, distinct from a service fee
+withheld out of a remitted total. Merchant-profile eligibility, ACH/card
+permissions, exact response amount semantics, fee refunds and settlement
+must be verified with issued sandbox credentials before enabling this
+option in production. All local acceptance traffic uses synthetic mocked
+responses.
 
 Usage
 =====
@@ -199,6 +245,14 @@ for convenience. Each one is a thing this module declines to invent.
   sandbox credential has been issued; the gateway rejects on credentials
   and nothing else, so the whole integration is provable the day one
   arrives.
+
+- **Fee-profile acceptance is pending.** Optional fee pass-through now
+  has synthetic acceptance tests for explicit payer consent,
+  principal-only invoice settlement, pending ACH, refunds and uncertain
+  outcomes. Issued sandbox credentials and the intended merchant profile
+  are still required to verify actual quote/sale/refund responses.
+  Custom merchant markup, fee-mode manual capture and off-session fee
+  charging are not implemented.
 
 Bug Tracker
 ===========

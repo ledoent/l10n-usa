@@ -33,3 +33,10 @@ convenience. Each one is a thing this module declines to invent.
   responses. Nothing has been proven against Zift because no sandbox
   credential has been issued; the gateway rejects on credentials and nothing
   else, so the whole integration is provable the day one arrives.
+
+- **Fee-profile acceptance is pending.** Optional fee pass-through now has
+  synthetic acceptance tests for explicit payer consent, principal-only invoice
+  settlement, pending ACH, refunds and uncertain outcomes. Issued sandbox
+  credentials and the intended merchant profile are still required to verify
+  actual quote/sale/refund responses. Custom merchant markup, fee-mode manual
+  capture and off-session fee charging are not implemented.
