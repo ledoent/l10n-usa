@@ -15,7 +15,7 @@
     "license": "LGPL-3",
     "development_status": "Alpha",
     "countries": ["us"],
-    "depends": ["payment"],
+    "depends": ["account_payment"],
     # Order matters, and it differs from an in-tree provider's on purpose.
     # Core providers list the methods before the provider because `payment`
     # has already created their provider record; Zift's is created below, by
@@ -25,6 +25,7 @@
     "data": [
         "views/payment_zift_templates.xml",
         "views/payment_provider_views.xml",
+        "views/payment_transaction_views.xml",
         "data/payment_provider_data.xml",
         "data/payment_method_data.xml",
     ],

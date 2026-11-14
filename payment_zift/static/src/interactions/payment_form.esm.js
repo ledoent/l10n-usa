@@ -17,6 +17,7 @@
  */
 /* global ZiftProxynization */
 
+import {ConfirmationDialog} from "@web/core/confirmation_dialog/confirmation_dialog";
 import {loadJS} from "@web/core/assets";
 import {_t} from "@web/core/l10n/translation";
 import {RPCError, rpc} from "@web/core/network/rpc";
@@ -188,6 +189,11 @@ patch(PaymentForm.prototype, {
             return;
         }
 
+        if (processingValues.zift_fee_enabled) {
+            await this._ziftQuoteAndPay(processingValues, ziftData);
+            return;
+        }
+
         try {
             await this.waitFor(
                 rpc("/payment/zift/payment", {
@@ -259,6 +265,68 @@ patch(PaymentForm.prototype, {
             accountAccessory: result.routingNumber || routingNumber,
             holderName: inputs.accountName.value.trim(),
         };
+    },
+
+    async _processTokenFlow(
+        providerCode,
+        paymentOptionId,
+        paymentMethodCode,
+        processingValues
+    ) {
+        if (providerCode !== "zift" || !processingValues.zift_fee_enabled) {
+            return super._processTokenFlow(...arguments);
+        }
+        await this._ziftQuoteAndPay(processingValues, null);
+    },
+
+    async _ziftQuoteAndPay(processingValues, ziftData) {
+        const params = {
+            reference: processingValues.reference,
+            partner_id: processingValues.partner_id,
+            access_token: processingValues.access_token,
+            zift_data: ziftData,
+        };
+        try {
+            const quote = await this.waitFor(rpc("/payment/zift/fee_quote", params));
+            const accepted = await new Promise((resolve) => {
+                this.services.dialog.add(
+                    ConfirmationDialog,
+                    {
+                        title: _t("Review payment and processing fee"),
+                        body: _t(
+                            "Payment: %s USD. Processing fee: %s USD. Total charge: %s USD. " +
+                                "The fee is collected by the gateway. Refunds from Odoo cover the payment principal.",
+                            quote.principal.toFixed(2),
+                            quote.fee.toFixed(2),
+                            quote.total.toFixed(2)
+                        ),
+                        confirmLabel: _t("Accept fee and pay"),
+                        cancelLabel: _t("Cancel"),
+                        confirm: () => resolve(true),
+                        cancel: () => resolve(false),
+                    },
+                    {onClose: () => resolve(false)}
+                );
+            });
+            if (!accepted) {
+                this._enableButton();
+                return;
+            }
+            await this.waitFor(
+                rpc("/payment/zift/payment", {
+                    ...params,
+                    fee_quote_id: quote.quote_id,
+                    fee_accepted: true,
+                })
+            );
+            window.location = "/payment/status";
+        } catch (error) {
+            this._displayErrorDialog(
+                _t("Payment processing failed"),
+                error instanceof RPCError ? error.data.message : error.message
+            );
+            this._enableButton();
+        }
     },
 
     // #=== GETTERS ===#
