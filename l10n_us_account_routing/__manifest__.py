@@ -3,13 +3,13 @@
 
 {
     "name": "Bank Routing Numbers",
-    "version": "19.0.1.0.0",
+    "version": "20.0.1.0.0",
     "category": "Banking addons",
-    "summary": "Add the routing numbers to the banks",
+    "summary": "Validate routing numbers on bank accounts",
     "author": "ForgeFlow, Odoo Community Association (OCA)",
     "website": "https://github.com/OCA/l10n-usa",
     "depends": ["base"],
-    "data": ["views/res_bank.xml"],
+    "data": [],
     "installable": True,
     "license": "LGPL-3",
     "external_dependencies": {"python": ["python-stdnum"]},

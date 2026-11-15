@@ -392,8 +392,10 @@ ul.auto-toc {
 <div class="section" id="known-issues-roadmap">
 <h2><a class="toc-backref" href="#toc-entry-1">Known issues / Roadmap</a></h2>
 <p>Odoo 20 stores routing information in the native bank-account
-<tt class="docutils literal">clearing_number</tt> field. This addon retains US checksum and Canadian
-format validation.</p>
+<tt class="docutils literal">clearing_number</tt> field. This addon retains US checksum validation;
+Canadian EFT validation is now provided by Odoo core: nine digits,
+starting with zero. Legacy eight-digit Canadian routing values require a
+reviewed format conversion during the database upgrade.</p>
 <p>A database upgrade must transfer each legacy <tt class="docutils literal">res.bank.routing_number</tt>
 to the linked bank accounts before the legacy bank records or links are
 removed. This code port is validated on fresh databases; a complete
