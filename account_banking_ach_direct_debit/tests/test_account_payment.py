@@ -1,96 +1,132 @@
 # Copyright (C) 2021 - TODAY, Open Source Integrators
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html)
-from odoo import fields
+from datetime import timedelta
 
-from odoo.addons.base.tests.common import BaseCommon
+from odoo import Command, fields
+
+from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
 
-class TestPayment(BaseCommon):
+class TestPayment(AccountTestInvoicingCommon):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.company.partner_id = cls.partner.id
+        cls.env.user.group_ids |= cls.env.ref(
+            "account_payment_order.group_account_payment"
+        )
+        cls.company = cls.company_data["company"]
+        cls.partner = cls.partner_a
         cls.company.legal_id_number = "12-3456789"
-        cls.payment_method_model = cls.env["account.payment.method"]
-        cls.ach_payment_method_01 = cls.payment_method_model.search(
-            [("code", "=", "ACH-In")], limit=1
+        cls.ach_payment_method_01 = cls.env.ref(
+            "account_banking_ach_direct_debit.ach_direct_debit"
         )
         cls.acme_bank = cls.env["res.bank"].create(
             {
                 "name": "ACME Bank",
-                "bic": "GEBABEBB03B",
-                "city": "Charleroi",
                 "routing_number": "021000021",
-                "country": cls.env.ref("base.be").id,
+                "country": cls.env.ref("base.us").id,
             }
         )
         bank_account = cls.env["res.partner.bank"].create(
             {
                 "acc_number": "0023032234211123",
-                "partner_id": cls.partner.id,
+                "partner_id": cls.company.partner_id.id,
                 "bank_id": cls.acme_bank.id,
                 "company_id": cls.company.id,
             }
         )
-        cls.journal_c1 = cls.env["account.journal"].create(
-            {
-                "name": "Journal 1",
-                "code": "J1",
-                "type": "bank",
-                "company_id": cls.company.id,
-                "bank_account_id": bank_account.id,
-            }
-        )
-        cls.inbound_mode = cls.env.ref("account_payment_mode.payment_mode_inbound_dd1")
-        cls.journal = cls.env["account.journal"].search(
-            [("type", "=", "bank"), ("company_id", "=", cls.company.id)],
-            limit=1,
-        )
+        cls.journal_c1 = cls.company_data["default_journal_bank"]
+        cls.journal_c1.bank_account_id = bank_account
         cls.payment_mode_c1 = cls.env["account.payment.mode"].create(
             {
                 "name": "ACH Direct Debit",
                 "bank_account_link": "variable",
                 "payment_method_id": cls.ach_payment_method_01.id,
                 "company_id": cls.company.id,
-                "fixed_journal_id": cls.journal_c1.id,
-                "variable_journal_ids": [(6, 0, [cls.journal_c1.id])],
+                "variable_journal_ids": [Command.set(cls.journal_c1.ids)],
             }
         )
+        cls.partner.customer_payment_mode_id = cls.payment_mode_c1
+        cls.customer_bank = cls.env["res.partner.bank"].create(
+            {
+                "acc_number": "123456789",
+                "partner_id": cls.partner.id,
+                "bank_id": cls.acme_bank.id,
+            }
+        )
+        cls.mandate = cls.env["account.banking.mandate"].create(
+            {
+                "partner_bank_id": cls.customer_bank.id,
+                "signature_date": fields.Date.today() - timedelta(days=20),
+                "company_id": cls.company.id,
+                "format": "ach",
+                "type": "recurrent",
+                "recurrent_sequence_type": "first",
+            }
+        )
+        cls.mandate.validate()
 
     def test_account_payment_order(self):
-        self.payment_order = self.env["account.payment.order"].create(
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "out_invoice",
+                "partner_id": self.partner.id,
+                "invoice_date": fields.Date.today() - timedelta(days=15),
+                "invoice_date_due": fields.Date.today() - timedelta(days=1),
+                "payment_mode_id": self.payment_mode_c1.id,
+                "mandate_id": self.mandate.id,
+                "invoice_line_ids": [
+                    Command.create(
+                        {
+                            "name": "ACH debit fixture",
+                            "account_id": self.company_data[
+                                "default_account_revenue"
+                            ].id,
+                            "quantity": 1,
+                            "price_unit": 125,
+                            "tax_ids": [Command.clear()],
+                        }
+                    )
+                ],
+            }
+        )
+        invoice.action_post()
+        order = self.env["account.payment.order"].create(
             {
                 "payment_type": "inbound",
                 "payment_mode_id": self.payment_mode_c1.id,
                 "journal_id": self.journal_c1.id,
-                "payment_method_id": self.ach_payment_method_01.id,
             }
         )
-        line_created_due = (
+        wizard = (
             self.env["account.payment.line.create"]
-            .with_context(
-                active_model="account.payment.order", active_id=self.payment_order.id
-            )
+            .with_context(active_model="account.payment.order", active_id=order.id)
             .create(
                 {
                     "date_type": "due",
                     "due_on": "<=",
                     "filter_date": fields.Date.today(),
                     "payment_mode": "any",
-                    "target_move": "all",
+                    "target_move": "posted",
                 }
             )
         )
-        line_created_due.populate()
-        self.assertGreater(
-            len(line_created_due.move_line_ids),
-            1,
-            "Expected more than one move line before filtering",
+        wizard.populate()
+        receivable = invoice.line_ids.filtered(
+            lambda line: line.account_id.account_type == "asset_receivable"
         )
-        line_created_due.move_line_ids = line_created_due.move_line_ids.filtered(
-            lambda line: line.journal_id and line.journal_id.type == "general"
-        )  # copy from: https://github.com/odoo/odoo/commit/67dc715#diff-78f3e1847de8ca0acf28d72a412947a549acdb08142d1dadf7646363d7972cb0L478
-        self.assertEqual(len(line_created_due.move_line_ids), 1)
-        line_created_due.create_payment_lines()
-        self.payment_order.draft2open()
-        self.payment_order.generated2uploaded()
+        self.assertTrue(receivable <= wizard.move_line_ids)
+        wizard.move_line_ids = receivable
+        wizard.create_payment_lines()
+        self.assertEqual(len(order.payment_line_ids), 1)
+        order.draft2open()
+        payload, filename = order.generate_payment_file()
+        self.assertTrue(filename.endswith(".txt"))
+        self.assertIn(b"62702100002", payload)
+        self.assertIn(b"0000012500", payload)
+        order.open2generated()
+        order.generated2uploaded()
+        self.assertEqual(order.state, "uploaded")
+        self.assertEqual(self.mandate.recurrent_sequence_type, "recurring")
+        self.assertEqual(self.mandate.last_debit_date, fields.Date.today())
+        self.assertEqual(invoice.amount_residual, 0)
