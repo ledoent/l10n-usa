@@ -1,4 +1,7 @@
 # DO NOT MERGE: immutable sibling migration pins.
-odoo-addon-l10n_us_partner_legal_number @ git+https://github.com/ledoent/l10n-usa.git@34ea72959a6e412b870b8aa0a64fc13b037ded05#subdirectory=l10n_us_partner_legal_number
-odoo-addon-l10n_us_account_routing @ git+https://github.com/ledoent/l10n-usa.git@cc66c987b8f49219966249d2f15ccd3ecb6ec05b#subdirectory=l10n_us_account_routing
-odoo-addon-account_banking_ach_base @ git+https://github.com/ledoent/l10n-usa.git@e68a8923ea30d20ea5d1151d69ddea6a052caa11#subdirectory=account_banking_ach_base
+odoo-addon-account_payment_mode @ git+https://github.com/OCA/bank-payment.git@277ccb017479db8acb172204cc8e36047acbd989#subdirectory=account_payment_mode
+odoo-addon-account_payment_order @ git+https://github.com/OCA/bank-payment.git@3f77f5c3a9ab4a4c8c16a64374154d0b8733c434#subdirectory=account_payment_order
+odoo-addon-account_banking_mandate @ git+https://github.com/OCA/bank-payment.git@65e94e1f84b777a2834fb78702b3a6741577b143#subdirectory=account_banking_mandate
+odoo-addon-l10n_us_account_routing @ git+https://github.com/ledoent/l10n-usa.git@fcde21dbeb4347e5e204a25c8793f21077ee053d#subdirectory=l10n_us_account_routing
+odoo-addon-l10n_us_partner_legal_number @ git+https://github.com/ledoent/l10n-usa.git@55f8efda8eb0977d28a0985454fc29c9d0587bf7#subdirectory=l10n_us_partner_legal_number
+odoo-addon-account_banking_ach_base @ git+https://github.com/ledoent/l10n-usa.git@5050d63782a4ae080dd6fbb02845700add7eeb8f#subdirectory=account_banking_ach_base
