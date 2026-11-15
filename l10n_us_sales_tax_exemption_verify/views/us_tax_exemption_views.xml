@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_us_tax_exemption_form_verify" model="ir.ui.view">
+        <field name="name">us.tax.exemption.form.verify</field>
+        <field name="model">us.tax.exemption</field>
+        <field
+            name="inherit_id"
+            ref="l10n_us_sales_tax_exemption.view_us_tax_exemption_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="before">
+                <header position="inside">
+                    <button
+                        name="action_verify"
+                        type="object"
+                        string="Verify"
+                        groups="l10n_us_sales_tax_engine.group_us_tax_manager"
+                        help="Check this certificate with the issuing authority and record the outcome."
+                    />
+                </header>
+            </xpath>
+            <xpath expr="//sheet" position="inside">
+                <group string="Verification">
+                    <field name="verification_result" />
+                    <field name="last_verified_on" />
+                    <field name="verification_count" invisible="1" />
+                    <field name="last_verification_id" invisible="1" />
+                </group>
+                <notebook>
+                    <page string="Verification History" name="verifications">
+                        <field name="verification_ids" readonly="1">
+                            <list>
+                                <field name="verified_on" />
+                                <field name="state_id" />
+                                <field name="verifier_id" />
+                                <field name="result" />
+                                <field name="detail" />
+                                <field name="verified_by" />
+                            </list>
+                        </field>
+                    </page>
+                </notebook>
+            </xpath>
+        </field>
+    </record>
+</odoo>
