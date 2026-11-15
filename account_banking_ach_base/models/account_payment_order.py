@@ -36,8 +36,8 @@ class AccountPaymentOrder(models.Model):
         return ascii_uppercase[ach_transactions_today]
 
     def ach_settings(self):
-        bank = self.company_partner_bank_id.bank_id
-        routing_number = bank.routing_number
+        bank = self.company_partner_bank_id
+        routing_number = bank.clearing_number
         legal_id_number = self.company_id.legal_id_number
         if not legal_id_number:
             raise UserError(
@@ -51,31 +51,31 @@ class AccountPaymentOrder(models.Model):
             raise UserError(
                 self.env._(
                     "%(name)s does not have a Routing Number assigned!",
-                    name=bank.name,
+                    name=bank.bank_name,
                 )
             )
         return {
-            "immediate_dest": self.company_partner_bank_id.acc_number,
+            "immediate_dest": self.company_partner_bank_id.account_number,
             "immediate_org": routing_number,
-            "immediate_dest_name": bank.name,
+            "immediate_dest_name": bank.bank_name,
             "immediate_org_name": self.company_id.name,
             "company_id": legal_id_number,
         }
 
     def validate_banking(self, line):
-        if not line.partner_bank_id.bank_id:
+        if not line.partner_bank_id.bank_name:
             raise UserError(
                 self.env._(
-                    "%(acc_number)s account number has no Bank assigned",
-                    acc_number=line.partner_bank_id.acc_number,
+                    "%(account_number)s account number has no Bank assigned",
+                    account_number=line.partner_bank_id.account_number,
                 )
             )
 
-        if not line.partner_bank_id.bank_id.routing_number:
+        if not line.partner_bank_id.clearing_number:
             raise UserError(
                 self.env._(
                     "%(name)s has no routing number specified",
-                    name=line.partner_bank_id.bank_id.name,
+                    name=line.partner_bank_id.bank_name,
                 )
             )
 
@@ -149,8 +149,8 @@ class AccountPaymentOrder(models.Model):
             entries.append(
                 {
                     "type": self.get_transaction_type(amount=amount),
-                    "routing_number": line.partner_bank_id.bank_id.routing_number,
-                    "account_number": line.partner_bank_id.acc_number,
+                    "routing_number": line.partner_bank_id.clearing_number,
+                    "account_number": line.partner_bank_id.account_number,
                     "amount": str(amount),
                     "name": name,
                     "addenda": [{"payment_related_info": note}],

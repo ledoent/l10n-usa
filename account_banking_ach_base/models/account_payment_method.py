@@ -11,6 +11,6 @@ class AccountPaymentMethod(models.Model):
     @api.model
     def _get_payment_method_information(self):
         res = super()._get_payment_method_information()
-        res["ACH-In"] = {"mode": "multi", "domain": [("type", "=", "bank")]}
-        res["ACH-Out"] = {"mode": "multi", "domain": [("type", "=", "bank")]}
+        res["ACH-In"] = {"mode": "multi", "type": ("bank",)}
+        res["ACH-Out"] = {"mode": "multi", "type": ("bank",)}
         return res

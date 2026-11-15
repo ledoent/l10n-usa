@@ -1,4 +1,4 @@
-Add routing_number on Bank records.
+Set the native clearing number and bank name on bank accounts.
 
 Add Legal ID on Partner and Company records.
 

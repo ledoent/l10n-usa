@@ -7,7 +7,7 @@ from odoo.tests.common import TransactionCase
 class TestACHBase(TransactionCase):
     """Exercise the three pieces of value this module ships:
 
-    1. ``res.bank.routing_number`` US-RTN format constraint.
+    1. ``res.partner.bank.clearing_number`` US-RTN format constraint.
     2. ``account.banking.mandate.delay_days`` blocks payment-line creation
        while the delay has not elapsed.
     3. ``account.banking.mandate.create`` auto-sets payment modes on the
@@ -25,14 +25,16 @@ class TestACHBase(TransactionCase):
     def test_us_routing_number_valid(self):
         """A valid 9-digit US routing number passes the constraint."""
         # 122000661 (Wells Fargo) — passes stdnum.us.rtn checksum.
-        bank = self.env["res.bank"].create(
+        bank = self.env["res.partner.bank"].create(
             {
-                "name": "Wells Fargo Test",
-                "country": self.us.id,
-                "routing_number": "122000661",
+                "bank_name": "Wells Fargo Test",
+                "account_number": "TEST-ROUTING",
+                "partner_id": self.env.company.partner_id.id,
+                "country_id": self.us.id,
+                "clearing_number": "122000661",
             }
         )
-        self.assertEqual(bank.routing_number, "122000661")
+        self.assertEqual(bank.clearing_number, "122000661")
 
     def test_us_routing_number_invalid_raises(self):
         """A 9-digit number with a bad checksum triggers ValidationError.
@@ -42,31 +44,37 @@ class TestACHBase(TransactionCase):
         rejects (sum mod 10 = 9, not 0).
         """
         with self.assertRaises(ValidationError):
-            self.env["res.bank"].create(
+            self.env["res.partner.bank"].create(
                 {
-                    "name": "Bogus US Bank",
-                    "country": self.us.id,
-                    "routing_number": "123456789",
+                    "bank_name": "Bogus US Bank",
+                    "account_number": "TEST-ROUTING",
+                    "partner_id": self.env.company.partner_id.id,
+                    "country_id": self.us.id,
+                    "clearing_number": "123456789",
                 }
             )
 
     def test_ca_routing_number_format(self):
-        """A Canadian routing number must be exactly 8 digits."""
-        # 8-digit valid example.
-        self.env["res.bank"].create(
+        """A Canadian routing number must be nine digits starting with zero."""
+        # Canadian EFT: 0 + institution + transit.
+        self.env["res.partner.bank"].create(
             {
-                "name": "Royal Bank of Canada Test",
-                "country": self.ca.id,
-                "routing_number": "00030001",
+                "bank_name": "Royal Bank of Canada Test",
+                "account_number": "TEST-ROUTING",
+                "partner_id": self.env.company.partner_id.id,
+                "country_id": self.ca.id,
+                "clearing_number": "000030001",
             }
         )
         # 7 digits fails.
         with self.assertRaises(ValidationError):
-            self.env["res.bank"].create(
+            self.env["res.partner.bank"].create(
                 {
-                    "name": "Bad CA Bank",
-                    "country": self.ca.id,
-                    "routing_number": "0003000",
+                    "bank_name": "Bad CA Bank",
+                    "account_number": "TEST-ROUTING-INVALID",
+                    "partner_id": self.env.company.partner_id.id,
+                    "country_id": self.ca.id,
+                    "clearing_number": "0003000",
                 }
             )
 
@@ -78,16 +86,16 @@ class TestACHBase(TransactionCase):
         partner = self.env["res.partner"].create(
             {"name": "Customer ACH Test", "customer_rank": 1}
         )
-        bank = self.env["res.bank"].create(
+        bank = self.env["res.partner.bank"].create(
             {
-                "name": "Test Bank Delay",
-                "country": self.us.id,
-                "routing_number": "122000661",
+                "bank_name": "Test Bank Delay",
+                "account_number": "TEST-ACH-001",
+                "partner_id": partner.id,
+                "country_id": self.us.id,
+                "clearing_number": "122000661",
             }
         )
-        partner_bank = self.env["res.partner.bank"].create(
-            {"partner_id": partner.id, "bank_id": bank.id, "acc_number": "TEST-ACH-001"}
-        )
+        partner_bank = bank
         mandate = self.env["account.banking.mandate"].create(
             {
                 "partner_bank_id": partner_bank.id,
