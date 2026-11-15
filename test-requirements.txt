@@ -1,0 +1,3 @@
+# DO NOT MERGE: immutable sibling migration pins.
+odoo-addon-l10n_us_partner_legal_number @ git+https://github.com/ledoent/l10n-usa.git@34ea72959a6e412b870b8aa0a64fc13b037ded05#subdirectory=l10n_us_partner_legal_number
+odoo-addon-l10n_us_account_routing @ git+https://github.com/ledoent/l10n-usa.git@cc66c987b8f49219966249d2f15ccd3ecb6ec05b#subdirectory=l10n_us_account_routing
