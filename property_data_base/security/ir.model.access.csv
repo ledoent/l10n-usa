@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_property_record_user,property.record user,model_property_record,group_property_data_user,1,1,1,0
+access_property_record_manager,property.record manager,model_property_record,group_property_data_manager,1,1,1,1
+access_property_data_source_user,property.data.source user,model_property_data_source,group_property_data_user,1,0,0,0
+access_property_data_source_manager,property.data.source manager,model_property_data_source,group_property_data_manager,1,1,1,1
+access_property_constraint_user,property.constraint user,model_property_constraint,group_property_data_user,1,1,1,1
+access_property_constraint_manager,property.constraint manager,model_property_constraint,group_property_data_manager,1,1,1,1
