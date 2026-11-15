@@ -21,18 +21,13 @@ class TestPayment(AccountTestInvoicingCommon):
         cls.ach_payment_method_01 = cls.env.ref(
             "account_banking_ach_direct_debit.ach_direct_debit"
         )
-        cls.acme_bank = cls.env["res.bank"].create(
-            {
-                "name": "ACME Bank",
-                "routing_number": "021000021",
-                "country": cls.env.ref("base.us").id,
-            }
-        )
         bank_account = cls.env["res.partner.bank"].create(
             {
-                "acc_number": "0023032234211123",
+                "account_number": "0023032234211123",
                 "partner_id": cls.company.partner_id.id,
-                "bank_id": cls.acme_bank.id,
+                "bank_name": "ACME Bank",
+                "country_id": cls.env.ref("base.us").id,
+                "clearing_number": "021000021",
                 "company_id": cls.company.id,
             }
         )
@@ -50,9 +45,11 @@ class TestPayment(AccountTestInvoicingCommon):
         cls.partner.customer_payment_mode_id = cls.payment_mode_c1
         cls.customer_bank = cls.env["res.partner.bank"].create(
             {
-                "acc_number": "123456789",
+                "account_number": "123456789",
                 "partner_id": cls.partner.id,
-                "bank_id": cls.acme_bank.id,
+                "bank_name": "ACME Bank",
+                "country_id": cls.env.ref("base.us").id,
+                "clearing_number": "021000021",
             }
         )
         cls.mandate = cls.env["account.banking.mandate"].create(

@@ -7,9 +7,14 @@ from odoo.addons.base.tests.common import BaseCommon
 
 
 class TestMandate(BaseCommon):
+    _test_user_groups = (
+        *BaseCommon._test_user_groups,
+        "account_payment_order.group_account_payment",
+    )
+
     def test_bank_mandate(self):
         bank_account = self.env["res.partner.bank"].create(
-            {"acc_number": "123456789", "partner_id": self.partner.id}
+            {"account_number": "123456789", "partner_id": self.partner.id}
         )
         mandate = self.env["account.banking.mandate"].create(
             {
