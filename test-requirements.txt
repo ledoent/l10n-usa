@@ -1,0 +1,7 @@
+# DO NOT MERGE: immutable sibling migration pins.
+odoo-addon-account_payment_mode @ git+https://github.com/ledoent/bank-payment.git@0acc2b6b7f2e5098cfe6c166970b95a974f08330#subdirectory=account_payment_mode
+odoo-addon-account_payment_order @ git+https://github.com/ledoent/bank-payment.git@0acc2b6b7f2e5098cfe6c166970b95a974f08330#subdirectory=account_payment_order
+odoo-addon-account_banking_mandate @ git+https://github.com/ledoent/bank-payment.git@0acc2b6b7f2e5098cfe6c166970b95a974f08330#subdirectory=account_banking_mandate
+odoo-addon-l10n_us_account_routing @ git+https://github.com/ledoent/l10n-usa.git@fcde21dbeb4347e5e204a25c8793f21077ee053d#subdirectory=l10n_us_account_routing
+odoo-addon-l10n_us_partner_legal_number @ git+https://github.com/ledoent/l10n-usa.git@55f8efda8eb0977d28a0985454fc29c9d0587bf7#subdirectory=l10n_us_partner_legal_number
+odoo-addon-account_banking_ach_base @ git+https://github.com/ledoent/l10n-usa.git@ab0c8e031ac02d6bb8588ae65c1fd2ff44c220a3#subdirectory=account_banking_ach_base
