@@ -8,7 +8,9 @@ from odoo.addons.base.tests.common import BaseCommon
 
 class TestMandate(BaseCommon):
     def test_bank_mandate(self):
-        bank_account = self.env.ref("account_payment_mode.res_partner_12_iban")
+        bank_account = self.env["res.partner.bank"].create(
+            {"acc_number": "123456789", "partner_id": self.partner.id}
+        )
         mandate = self.env["account.banking.mandate"].create(
             {
                 "partner_bank_id": bank_account.id,
