@@ -140,6 +140,20 @@ class TestPayment(AccountTestInvoicingCommon):
         with self.assertRaisesRegex(UserError, "has expired"):
             order.validate_mandates(payment)
 
+    def test_recent_invoice_is_rejected_with_delay_message(self):
+        invoice = self.env["account.move"].new(
+            {
+                "move_type": "out_invoice",
+                "partner_id": self.partner.id,
+                "payment_mode_id": self.payment_mode_c1.id,
+                "mandate_id": self.mandate.id,
+                "invoice_date": fields.Date.context_today(self.env["account.move"]),
+                "name": "ACH-DELAY-TEST",
+            }
+        )
+        with self.assertRaisesRegex(UserError, "ACH-DELAY-TEST.*Debit Order until"):
+            invoice.create_account_payment_line()
+
     def test_used_oneoff_mandate_is_rejected(self):
         self.mandate.write({"type": "oneoff", "last_debit_date": fields.Date.today()})
         order = self.env["account.payment.order"].new({"payment_type": "inbound"})
