@@ -1,0 +1,3 @@
+Odoo 20 stores routing information in the native bank-account `clearing_number` field. This addon retains US checksum validation; Canadian EFT validation is now provided by Odoo core: nine digits, starting with zero. Legacy eight-digit Canadian routing values require a reviewed format conversion during the database upgrade.
+
+A database upgrade must transfer each legacy `res.bank.routing_number` to the linked bank accounts before the legacy bank records or links are removed. This code port is validated on fresh databases; a complete 19-to-20 database upgrade and that legacy routing-data transfer have not been validated.
