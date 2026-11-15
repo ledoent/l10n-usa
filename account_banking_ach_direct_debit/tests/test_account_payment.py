@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 from odoo import Command, fields
+from odoo.exceptions import UserError
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
@@ -130,3 +131,21 @@ class TestPayment(AccountTestInvoicingCommon):
         self.assertEqual(self.mandate.recurrent_sequence_type, "recurring")
         self.assertEqual(self.mandate.last_debit_date, fields.Date.today())
         self.assertEqual(invoice.amount_residual, 0)
+
+    def test_expired_mandate_is_rejected(self):
+        self.mandate.state = "expired"
+        order = self.env["account.payment.order"].new({"payment_type": "inbound"})
+        payment = self.env["account.payment"].new(
+            {"partner_id": self.partner.id, "mandate_id": self.mandate.id}
+        )
+        with self.assertRaisesRegex(UserError, "has expired"):
+            order.validate_mandates(payment)
+
+    def test_used_oneoff_mandate_is_rejected(self):
+        self.mandate.write({"type": "oneoff", "last_debit_date": fields.Date.today()})
+        order = self.env["account.payment.order"].new({"payment_type": "inbound"})
+        payment = self.env["account.payment"].new(
+            {"partner_id": self.partner.id, "mandate_id": self.mandate.id}
+        )
+        with self.assertRaisesRegex(UserError, "last debit date"):
+            order.validate_mandates(payment)
